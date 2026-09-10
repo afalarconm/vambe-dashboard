@@ -72,6 +72,7 @@ Offline Gemma batch → `data/labels_llm_v1.json` → Vercel build runs `load_la
 Optional re-labeling (requires `OPENROUTER_API_KEY`):
 
 ```bash
+export OPENROUTER_API_KEY=your_key
 python scripts/categorize.py --limit 100 --export
 python scripts/load_labels.py
 ```
