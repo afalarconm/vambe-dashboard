@@ -1,1 +1,127 @@
-body { margin: 0; }
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap');
+
+/* ── Vambe design tokens (from vambe.ai CSS) ── */
+:root {
+  /* Blue (primary) */
+  --color-vambe-blue-25: #F5F8FF;
+  --color-vambe-blue-50: #F2F6FE;
+  --color-vambe-blue-100: #E1EAFE;
+  --color-vambe-blue-150: #D3E0FD;
+  --color-vambe-blue-200: #C8D9FE;
+  --color-vambe-blue-250: #B4CBFE;
+  --color-vambe-blue-300: #A6C1FC;
+  --color-vambe-blue-400: #729CF8;
+  --color-vambe-blue-450: #5A8CF6;
+  --color-vambe-blue-500: #437AEF;
+  --color-vambe-blue-550: #2C66E2;
+  --color-vambe-blue-600: #2861DC;
+  --color-vambe-blue-700: #1C4EBA;
+  --color-vambe-blue-800: #1B4298;
+  --color-vambe-blue-900: #1D3D81;
+  --color-vambe-blue-950: #0A1C43;
+
+  /* Orange (accent) */
+  --color-vambe-orange-50: #FFF7ED;
+  --color-vambe-orange-300: #FFB86A;
+  --color-vambe-orange-500: #FF6900;
+
+  /* Purple (accent) */
+  --color-vambe-purple-50: #F7E5FF;
+  --color-vambe-purple-800: #8F00CC;
+
+  /* Slate (neutrals) */
+  --color-vambe-slate-25: #FCFDFE;
+  --color-vambe-slate-50: #F8FAFC;
+  --color-vambe-slate-100: #F1F5F9;
+  --color-vambe-slate-150: #EAEFF4;
+  --color-vambe-slate-200: #E2E8F0;
+  --color-vambe-slate-300: #CBD5E1;
+  --color-vambe-slate-400: #94A3B8;
+  --color-vambe-slate-500: #64748B;
+  --color-vambe-slate-550: #556379;
+  --color-vambe-slate-600: #475569;
+  --color-vambe-slate-700: #334155;
+  --color-vambe-slate-800: #1E293B;
+  --color-vambe-slate-900: #0F172A;
+  --color-vambe-slate-950: #020617;
+
+  /* Semantic aliases (light) */
+  --color-bg: #ffffff;
+  --color-bg-subtle: var(--color-vambe-slate-50);
+  --color-surface: #ffffff;
+  --color-surface-raised: var(--color-vambe-slate-25);
+  --color-border: var(--color-vambe-slate-200);
+  --color-border-soft: var(--color-vambe-blue-100);
+  --color-text: var(--color-vambe-slate-900);
+  --color-text-muted: var(--color-vambe-slate-500);
+  --color-text-subtle: var(--color-vambe-slate-400);
+  --color-primary: var(--color-vambe-blue-500);
+  --color-primary-hover: var(--color-vambe-blue-600);
+  --color-primary-soft: var(--color-vambe-blue-50);
+  --color-primary-text: #ffffff;
+  --color-focus-ring: var(--color-vambe-blue-300);
+
+  /* Chart palette */
+  --color-chart-1: var(--color-vambe-blue-500);
+  --color-chart-2: var(--color-vambe-blue-400);
+  --color-chart-3: var(--color-vambe-orange-500);
+  --color-chart-4: var(--color-vambe-purple-800);
+
+  /* Radii */
+  --radius-sm: 0.375rem;
+  --radius-md: 0.625rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+  --radius-2xl: 1.25rem;
+  --radius-3xl: 1.5rem;
+  --radius-full: 9999px;
+
+  /* Typography */
+  --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  --font-display: var(--font-sans);
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-md: 0 4px 12px rgba(15, 23, 42, 0.06);
+  --shadow-card: 0 1px 3px rgba(15, 23, 42, 0.04), 0 1px 2px rgba(15, 23, 42, 0.02);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg: var(--color-vambe-blue-950);
+    --color-bg-subtle: var(--color-vambe-slate-900);
+    --color-surface: var(--color-vambe-slate-900);
+    --color-surface-raised: var(--color-vambe-slate-800);
+    --color-border: var(--color-vambe-slate-700);
+    --color-border-soft: var(--color-vambe-blue-900);
+    --color-text: var(--color-vambe-slate-100);
+    --color-text-muted: var(--color-vambe-slate-400);
+    --color-text-subtle: var(--color-vambe-slate-500);
+    --color-primary-soft: rgba(67, 122, 239, 0.12);
+    --color-focus-ring: var(--color-vambe-blue-600);
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.2);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.3);
+    --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.25);
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: 0.9375rem;
+  line-height: 1.5;
+  background: var(--color-bg-subtle);
+  color: var(--color-text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  min-height: 100vh;
+}
