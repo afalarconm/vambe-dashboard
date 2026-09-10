@@ -1,8 +1,8 @@
 # Vambe Take-Home
 
-**Live demo:** [temporary-sonic-violet-79ppfpr.vercel.app](https://temporary-sonic-violet-79ppfpr.vercel.app) — check [`/health`](https://temporary-sonic-violet-79ppfpr.vercel.app/health) (`llm_labels: 971`)
+**Live demo:** [temporary-sonic-violet-79ppfpr.vercel.app](https://temporary-sonic-violet-79ppfpr.vercel.app) — check [`/health`](https://temporary-sonic-violet-79ppfpr.vercel.app/health)
 
-Sales meeting explorer over ~10k Spanish transcripts: filter meetings, compare win rates by category, inspect Gemma labels.
+Sales meeting explorer over Spanish transcripts: filter meetings, compare win rates by category, inspect Gemma labels.
 
 ## Run locally
 
@@ -40,52 +40,55 @@ FastAPI (apps/api) ◄── read-only ────┘
        └── static ──► React (apps/web/dist)
 ```
 
+**Stack:** FastAPI + Vite split monorepo — Python owns ingest, LLM batch, and SQLite; React owns the dashboard. Thin read API + baked SQLite keeps the demo easy to skim and run.
+
 | Layer | Role |
 |-------|------|
-| `scripts/` | Offline data + labeling pipeline |
+| `scripts/` | Offline ingest + LLM labeling pipeline |
 | `apps/api/` | Read-only SQLite queries, CORS, metrics |
 | `apps/web/` | Vite + React dashboard (Recharts) |
 | `main.py` | Vercel entrypoint (`from apps.api.main import app`) |
 
-### Category dimensions
+### Dimensions (7)
 
-Seven fields per meeting — six locked enums (`scripts/enums.py`) plus derived volume:
+Six locked enums (`scripts/enums.py`) plus derived volume — one line per axis:
 
 | Dimension | Why |
 |-----------|-----|
-| `primary_job` | Core bot job (scheduling, quoting, FAQ, …) — drives product-fit charts |
-| `handoff_topology` | Bot-only vs human routing — affects deployment complexity |
-| `system_gravity` | Standalone vs named CRM vs must-integrate — integration signal |
-| `trust_surface` | Standard vs health/legal/luxury — compliance & tone constraints |
-| `voice_contract` | Brand voice expectation when stated |
-| `buying_trigger` | Why they’re buying (saturation, coverage gap, growth, …) |
-| `volume_band` | Monthly inquiry volume parsed from transcript numbers |
+| `primary_job` | Maps discovery notes to the bot capability the prospect wants (booking, catalog, quoting, FAQ…); packaging/demo for Sales + feature demand for Product. |
+| `handoff_topology` | How the bot involves humans (bot-only, generic, specialist, role-based); implementation shape + win-rate lever. |
+| `system_gravity` | How glued to existing systems (standalone → named → must integrate); SE load / cycle-time / delivery cost. |
+| `trust_surface` | Domain sensitivity (standard → health → regulated → discretion); compliance tone, guardrails, approval. |
+| `voice_contract` | Expected bot tone; delivery constraint / brand fit — wrong voice kills a good demo. |
+| `buying_trigger` | Why shopping now; seller coaching / pipeline quality. |
+| `volume_band` | Normalize stated WhatsApp volume into bands for capacity/pricing/win-rate without inventing numbers. |
 
 Fixed enums keep LLM output validatable and metrics comparable across meetings.
 
-### Labeling (offline only)
+### Labels (offline only)
 
-| Mode | Command | Use |
-|------|---------|-----|
-| Heuristic | `python scripts/categorize.py` | Regex/keyword demo, no API key |
-| LLM | `OPENROUTER_API_KEY=… python scripts/categorize.py --llm --limit 100 --export` | Gemma via OpenRouter; stratified 50/50 closed/open sample |
+Offline Gemma batch → `data/labels_llm_v1.json` → Vercel build runs `load_labels` into read-only SQLite. UI never calls OpenRouter — reproducible deploys, no prod API key.
+
+Optional re-labeling (requires `OPENROUTER_API_KEY`):
+
+```bash
+python scripts/categorize.py --limit 100 --export
+python scripts/load_labels.py
+```
 
 - **Batch:** `--limit N` controls sample size; progress logged every 25 rows; retries on 429/503.
-- **Export:** `--export` writes `data/labels_llm_v1.json` (committed artifact, 971 `llm-v1` rows).
-- **Load:** `python scripts/load_labels.py` bakes JSON into SQLite.
+- **Export:** `--export` writes `data/labels_llm_v1.json` (committed artifact).
 - **Re-export:** `python scripts/export_labels.py` dumps DB → JSON.
 
-Production never calls OpenRouter — it serves pre-baked labels only.
+### Metrics
 
-### Vercel deploy
-
-Build (`scripts/vercel_build.sh`): `npm run build` → `ingest` → `load_labels`. SQLite is gitignored; generated at build and bundled read-only (`vercel.json` `includeFiles`). No runtime env vars required.
+Win rate × `primary_job` / `handoff_topology` / `buying_trigger` + `system_gravity` mix — each chart maps to a Vambe role (Product, Solutions, Sales, SE). All metrics use LLM categories only.
 
 ### Key decisions
 
-- **SQLite + baked JSON** — zero managed DB on serverless; reproducible deploys from git.
-- **Separate API / UI** — FastAPI for data; React for filters and charts; single process serves both in prod.
-- **Enum-locked taxonomy** — schema validation on LLM JSON; heuristic fallback for local demos.
+- **Baked labels, no LLM at runtime** — offline Gemma → JSON → SQLite at build; production serves pre-labeled data only.
+- **FastAPI + Vite split** — Python pipeline vs React dashboard; single process in prod, separate ports in dev.
+- **Enum-locked taxonomy** — schema validation on LLM JSON; comparable metrics across meetings.
 - **Read-only runtime DB** — `mode=ro` URI; ingest/labeling are build-time or dev-only scripts.
 
 ## API
