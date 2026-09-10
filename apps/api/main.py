@@ -144,6 +144,44 @@ def system_gravity_mix():
     return [dict(r) for r in rows]
 
 
+@app.get("/metrics/win-rate-by-volume-band")
+def win_rate_by_volume_band():
+    conn = db()
+    result = win_rate(conn, "volume_band", "volume_band")
+    conn.close()
+    return result
+
+
+@app.get("/metrics/job-handoff-heatmap")
+def job_handoff_heatmap():
+    conn = db()
+    jobs = [r[0] for r in conn.execute(
+        "SELECT DISTINCT primary_job FROM categories WHERE primary_job IS NOT NULL ORDER BY 1"
+    ).fetchall()]
+    handoffs = [r[0] for r in conn.execute(
+        "SELECT DISTINCT handoff_topology FROM categories WHERE handoff_topology IS NOT NULL ORDER BY 1"
+    ).fetchall()]
+    rows = conn.execute("""
+        SELECT c.primary_job AS job,
+               c.handoff_topology AS handoff,
+               SUM(m.closed) AS wins,
+               COUNT(*) AS total,
+               ROUND(100.0 * SUM(m.closed) / COUNT(*), 1) AS win_rate
+        FROM meetings m
+        JOIN categories c ON c.meeting_id = m.id
+        WHERE c.primary_job IS NOT NULL
+          AND c.handoff_topology IS NOT NULL
+        GROUP BY c.primary_job, c.handoff_topology
+    """).fetchall()
+    conn.close()
+    return {
+        "jobs": jobs,
+        "handoffs": handoffs,
+        "cells": [dict(r) for r in rows],
+        "min_sample": 5,
+    }
+
+
 @app.get("/filters")
 def filters():
     conn = db()

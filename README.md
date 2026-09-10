@@ -102,3 +102,5 @@ Win rate × `primary_job` / `handoff_topology` / `buying_trigger` + `system_grav
 | `GET /metrics/win-rate-by-handoff` | Win rate by `handoff_topology` |
 | `GET /metrics/win-rate-by-trigger` | Win rate by `buying_trigger` |
 | `GET /metrics/system-gravity-mix` | Share by `system_gravity` |
+| `GET /metrics/win-rate-by-volume-band` | Win rate by `volume_band` |
+| `GET /metrics/job-handoff-heatmap` | Win rate matrix: `primary_job` × `handoff_topology` |
