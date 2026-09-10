@@ -11,10 +11,6 @@ SYSTEM_GRAVITY = [
 TRUST_SURFACE = [
     "standard", "health_sensitive", "regulated_advice_boundary", "discretion_prestige",
 ]
-VOICE_CONTRACT = [
-    "not_specified", "warm_hospitable", "corporate_expert", "motivational_energetic",
-    "luxury_prestige", "care_trustworthy", "brand_custom",
-]
 BUYING_TRIGGER = [
     "ops_saturation", "coverage_gap", "growth_ambition", "budget_cautious", "efficiency_general",
 ]
@@ -27,7 +23,6 @@ ALL = {
     "handoff_topology": HANDOFF_TOPOLOGY,
     "system_gravity": SYSTEM_GRAVITY,
     "trust_surface": TRUST_SURFACE,
-    "voice_contract": VOICE_CONTRACT,
     "buying_trigger": BUYING_TRIGGER,
     "volume_band": VOLUME_BAND,
 }

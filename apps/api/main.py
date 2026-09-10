@@ -9,6 +9,14 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 BUNDLE_DB = ROOT / "data" / "meetings.db"
 STATIC_DIR = Path(__file__).resolve().parent.parent / "web" / "dist"
 
+WIN_RATE_SERIES = (
+    ("primary_job", "job"),
+    ("handoff_topology", "handoff"),
+    ("buying_trigger", "trigger"),
+    ("volume_band", "volume_band"),
+)
+GROUP_COLS = {col for col, _ in WIN_RATE_SERIES} | {"system_gravity"}
+
 app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
@@ -24,7 +32,51 @@ def db():
     return conn
 
 
-def win_rate(conn, group_col: str, alias: str):
+def meeting_clauses(
+    seller: str | None = None,
+    closed: int | None = None,
+    primary_job: str | None = None,
+    handoff_topology: str | None = None,
+    trust_surface: str | None = None,
+    buying_trigger: str | None = None,
+    q: str | None = None,
+    labeled_only: bool = False,
+) -> tuple[list[str], list]:
+    clauses, params = [], []
+    if labeled_only:
+        clauses.append("c.prompt_version IS NOT NULL")
+    if seller:
+        clauses.append("m.seller = ?")
+        params.append(seller)
+    if closed is not None:
+        clauses.append("m.closed = ?")
+        params.append(closed)
+    if primary_job:
+        clauses.append("c.primary_job = ?")
+        params.append(primary_job)
+    if handoff_topology:
+        clauses.append("c.handoff_topology = ?")
+        params.append(handoff_topology)
+    if trust_surface:
+        clauses.append("c.trust_surface = ?")
+        params.append(trust_surface)
+    if buying_trigger:
+        clauses.append("c.buying_trigger = ?")
+        params.append(buying_trigger)
+    if q:
+        clauses.append("(m.nombre LIKE ? OR m.transcript LIKE ?)")
+        params.extend([f"%{q}%", f"%{q}%"])
+    return clauses, params
+
+
+def where_sql(clauses: list[str]) -> str:
+    return f"WHERE {' AND '.join(clauses)}" if clauses else ""
+
+
+def win_rate(conn, group_col: str, alias: str, clauses: list[str], params: list):
+    if group_col not in GROUP_COLS:
+        raise ValueError(group_col)
+    where = where_sql([*clauses, f"c.{group_col} IS NOT NULL"])
     rows = conn.execute(f"""
         SELECT c.{group_col} AS {alias},
                SUM(m.closed) AS wins,
@@ -32,11 +84,61 @@ def win_rate(conn, group_col: str, alias: str):
                ROUND(100.0 * SUM(m.closed) / COUNT(*), 1) AS win_rate
         FROM meetings m
         JOIN categories c ON c.meeting_id = m.id
-        WHERE c.{group_col} IS NOT NULL
+        {where}
         GROUP BY c.{group_col}
         ORDER BY win_rate DESC
-    """).fetchall()
+    """, params).fetchall()
     return [dict(r) for r in rows]
+
+
+def gravity_mix(conn, clauses: list[str], params: list):
+    where = where_sql([*clauses, "c.system_gravity IS NOT NULL"])
+    rows = [dict(r) for r in conn.execute(f"""
+        SELECT c.system_gravity AS gravity, COUNT(*) AS count
+        FROM meetings m
+        JOIN categories c ON c.meeting_id = m.id
+        {where}
+        GROUP BY c.system_gravity
+        ORDER BY count DESC
+    """, params).fetchall()]
+    total = sum(r["count"] for r in rows)
+    for r in rows:
+        r["share"] = round(100.0 * r["count"] / total, 1) if total else 0
+    return rows
+
+
+def job_handoff_heatmap(conn, clauses: list[str], params: list):
+    where = where_sql([
+        *clauses,
+        "c.primary_job IS NOT NULL",
+        "c.handoff_topology IS NOT NULL",
+    ])
+    cells = [dict(r) for r in conn.execute(f"""
+        SELECT c.primary_job AS job,
+               c.handoff_topology AS handoff,
+               SUM(m.closed) AS wins,
+               COUNT(*) AS total,
+               ROUND(100.0 * SUM(m.closed) / COUNT(*), 1) AS win_rate
+        FROM meetings m
+        JOIN categories c ON c.meeting_id = m.id
+        {where}
+        GROUP BY c.primary_job, c.handoff_topology
+    """, params).fetchall()]
+    jobs = sorted({c["job"] for c in cells})
+    handoffs = sorted({c["handoff"] for c in cells})
+    return {"jobs": jobs, "handoffs": handoffs, "cells": cells, "min_sample": 5}
+
+
+def collect_metrics(conn, clauses: list[str], params: list) -> dict:
+    series = {
+        f"by_{alias}": win_rate(conn, col, alias, clauses, params)
+        for col, alias in WIN_RATE_SERIES
+    }
+    return {
+        **series,
+        "gravity_mix": gravity_mix(conn, clauses, params),
+        "job_handoff_heatmap": job_handoff_heatmap(conn, clauses, params),
+    }
 
 
 @app.get("/health")
@@ -63,32 +165,11 @@ def meetings(
     limit: int = Query(50, le=200),
     offset: int = 0,
 ):
-    clauses, params = [], []
-    if labeled_only:
-        clauses.append("c.prompt_version IS NOT NULL")
-    if seller:
-        clauses.append("m.seller = ?")
-        params.append(seller)
-    if closed is not None:
-        clauses.append("m.closed = ?")
-        params.append(closed)
-    if primary_job:
-        clauses.append("c.primary_job = ?")
-        params.append(primary_job)
-    if handoff_topology:
-        clauses.append("c.handoff_topology = ?")
-        params.append(handoff_topology)
-    if trust_surface:
-        clauses.append("c.trust_surface = ?")
-        params.append(trust_surface)
-    if buying_trigger:
-        clauses.append("c.buying_trigger = ?")
-        params.append(buying_trigger)
-    if q:
-        clauses.append("(m.nombre LIKE ? OR m.transcript LIKE ?)")
-        params.extend([f"%{q}%", f"%{q}%"])
-
-    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    clauses, params = meeting_clauses(
+        seller, closed, primary_job, handoff_topology, trust_surface,
+        buying_trigger, q, labeled_only,
+    )
+    where = where_sql(clauses)
     sql = f"""
         SELECT m.id, m.nombre, m.email, m.seller, m.meeting_date, m.closed,
                c.primary_job, c.handoff_topology, c.trust_surface, c.buying_trigger,
@@ -99,117 +180,51 @@ def meetings(
         ORDER BY m.meeting_date DESC
         LIMIT ? OFFSET ?
     """
-    params.extend([limit, offset])
     conn = db()
-    rows = [dict(r) for r in conn.execute(sql, params).fetchall()]
+    rows = [dict(r) for r in conn.execute(sql, [*params, limit, offset]).fetchall()]
     count = conn.execute(
         f"SELECT COUNT(*) FROM meetings m LEFT JOIN categories c ON c.meeting_id = m.id {where}",
-        params[:-2],
+        params,
     ).fetchone()[0]
     conn.close()
     return {"items": rows, "total": count}
 
 
-@app.get("/metrics/win-rate-by-job")
-def win_rate_by_job():
+@app.get("/metrics")
+def metrics(
+    seller: str | None = None,
+    closed: int | None = None,
+    primary_job: str | None = None,
+    handoff_topology: str | None = None,
+    trust_surface: str | None = None,
+    buying_trigger: str | None = None,
+    q: str | None = None,
+    labeled_only: bool = False,
+):
+    clauses, params = meeting_clauses(
+        seller, closed, primary_job, handoff_topology, trust_surface,
+        buying_trigger, q, labeled_only,
+    )
     conn = db()
-    result = win_rate(conn, "primary_job", "job")
+    result = collect_metrics(conn, clauses, params)
     conn.close()
     return result
-
-
-@app.get("/metrics/win-rate-by-handoff")
-def win_rate_by_handoff():
-    conn = db()
-    result = win_rate(conn, "handoff_topology", "handoff")
-    conn.close()
-    return result
-
-
-@app.get("/metrics/win-rate-by-trigger")
-def win_rate_by_trigger():
-    conn = db()
-    result = win_rate(conn, "buying_trigger", "trigger")
-    conn.close()
-    return result
-
-
-@app.get("/metrics/system-gravity-mix")
-def system_gravity_mix():
-    conn = db()
-    rows = conn.execute("""
-        SELECT c.system_gravity AS gravity,
-               COUNT(*) AS count,
-               ROUND(100.0 * COUNT(*) / (SELECT COUNT(*) FROM categories), 1) AS share
-        FROM categories c
-        WHERE c.system_gravity IS NOT NULL
-        GROUP BY c.system_gravity
-        ORDER BY count DESC
-    """).fetchall()
-    conn.close()
-    return [dict(r) for r in rows]
-
-
-@app.get("/metrics/win-rate-by-volume-band")
-def win_rate_by_volume_band():
-    conn = db()
-    result = win_rate(conn, "volume_band", "volume_band")
-    conn.close()
-    return result
-
-
-@app.get("/metrics/job-handoff-heatmap")
-def job_handoff_heatmap():
-    conn = db()
-    jobs = [r[0] for r in conn.execute(
-        "SELECT DISTINCT primary_job FROM categories WHERE primary_job IS NOT NULL ORDER BY 1"
-    ).fetchall()]
-    handoffs = [r[0] for r in conn.execute(
-        "SELECT DISTINCT handoff_topology FROM categories WHERE handoff_topology IS NOT NULL ORDER BY 1"
-    ).fetchall()]
-    rows = conn.execute("""
-        SELECT c.primary_job AS job,
-               c.handoff_topology AS handoff,
-               SUM(m.closed) AS wins,
-               COUNT(*) AS total,
-               ROUND(100.0 * SUM(m.closed) / COUNT(*), 1) AS win_rate
-        FROM meetings m
-        JOIN categories c ON c.meeting_id = m.id
-        WHERE c.primary_job IS NOT NULL
-          AND c.handoff_topology IS NOT NULL
-        GROUP BY c.primary_job, c.handoff_topology
-    """).fetchall()
-    conn.close()
-    return {
-        "jobs": jobs,
-        "handoffs": handoffs,
-        "cells": [dict(r) for r in rows],
-        "min_sample": 5,
-    }
 
 
 @app.get("/filters")
 def filters():
     conn = db()
-    def distinct(col, table="meetings", alias="m"):
+    def distinct(col, table="meetings"):
         return [r[0] for r in conn.execute(
-            f"SELECT DISTINCT {col} FROM {table} {alias} WHERE {col} IS NOT NULL ORDER BY 1"
+            f"SELECT DISTINCT {col} FROM {table} WHERE {col} IS NOT NULL ORDER BY 1"
         ).fetchall()]
 
     result = {
         "sellers": distinct("seller"),
-        "primary_jobs": [r[0] for r in conn.execute(
-            "SELECT DISTINCT primary_job FROM categories WHERE primary_job IS NOT NULL ORDER BY 1"
-        ).fetchall()],
-        "handoff_topologies": [r[0] for r in conn.execute(
-            "SELECT DISTINCT handoff_topology FROM categories WHERE handoff_topology IS NOT NULL ORDER BY 1"
-        ).fetchall()],
-        "trust_surfaces": [r[0] for r in conn.execute(
-            "SELECT DISTINCT trust_surface FROM categories WHERE trust_surface IS NOT NULL ORDER BY 1"
-        ).fetchall()],
-        "buying_triggers": [r[0] for r in conn.execute(
-            "SELECT DISTINCT buying_trigger FROM categories WHERE buying_trigger IS NOT NULL ORDER BY 1"
-        ).fetchall()],
+        "primary_jobs": distinct("primary_job", "categories"),
+        "handoff_topologies": distinct("handoff_topology", "categories"),
+        "trust_surfaces": distinct("trust_surface", "categories"),
+        "buying_triggers": distinct("buying_trigger", "categories"),
     }
     conn.close()
     return result

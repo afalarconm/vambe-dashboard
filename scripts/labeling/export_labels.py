@@ -12,7 +12,7 @@ def export_labels(out: Path = DEFAULT_OUT, prompt_version: str = "llm-v1"):
     conn.row_factory = sqlite3.Row
     rows = conn.execute(
         """SELECT meeting_id, primary_job, handoff_topology, system_gravity, trust_surface,
-                  voice_contract, buying_trigger, volume_band, model, prompt_version, labeled_at
+                  buying_trigger, volume_band, model, prompt_version, labeled_at
            FROM categories WHERE prompt_version = ? ORDER BY meeting_id""",
         (prompt_version,),
     ).fetchall()

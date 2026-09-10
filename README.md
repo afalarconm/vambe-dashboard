@@ -21,7 +21,13 @@ Bake loads transcripts into SQLite first. The labeler reads a sample of those ro
 | **Bake** | `scripts/bake_db.py` | CSV + JSON → `data/meetings.db` |
 | **Serve** | `apps/api/` + `apps/web/` | Read-only API + React dashboard |
 
-Seven locked dimensions live in `scripts/labeling/taxonomy.py`. The **Dimensions** tab is the glossary.
+Six dimensions live in `scripts/labeling/taxonomy.py`. The **Dimensions** tab is the glossary.
+
+## Key decisions
+
+- **Label offline, serve read-only.** OpenRouter runs in `scripts/labeling/`, never on a request. The live demo needs no API key.
+- **Bake SQLite from CSV + labels JSON.** The DB is gitignored; labels are the committed artifact.
+- **Charts use the same filters as the table.** `GET /metrics` takes the same query params as `GET /meetings`.
 
 ## Run locally
 
@@ -66,11 +72,6 @@ python scripts/bake_db.py
 | Endpoint | Returns |
 |----------|---------|
 | `GET /health` | `{ok, llm_labels, total_meetings}` |
-| `GET /meetings` | Paginated meetings + labels |
+| `GET /meetings` | Paginated meetings + labels (filters: seller, closed, dimensions, `q`, `labeled_only`) |
 | `GET /filters` | Distinct filter values |
-| `GET /metrics/win-rate-by-job` | Win rate by `primary_job` |
-| `GET /metrics/win-rate-by-handoff` | Win rate by `handoff_topology` |
-| `GET /metrics/win-rate-by-trigger` | Win rate by `buying_trigger` |
-| `GET /metrics/win-rate-by-volume-band` | Win rate by `volume_band` |
-| `GET /metrics/system-gravity-mix` | Share by `system_gravity` |
-| `GET /metrics/job-handoff-heatmap` | Win rate: `primary_job` × `handoff_topology` |
+| `GET /metrics` | Win-rate series, gravity mix, job × handoff heatmap — same filters as `/meetings` |

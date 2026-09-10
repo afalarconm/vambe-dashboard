@@ -21,7 +21,9 @@ def ingest_meetings():
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     conn.executescript("""
-        CREATE TABLE IF NOT EXISTS meetings (
+        DROP TABLE IF EXISTS categories;
+        DROP TABLE IF EXISTS meetings;
+        CREATE TABLE meetings (
             id INTEGER PRIMARY KEY,
             nombre TEXT,
             email TEXT,
@@ -31,13 +33,12 @@ def ingest_meetings():
             closed INTEGER,
             transcript TEXT
         );
-        CREATE TABLE IF NOT EXISTS categories (
+        CREATE TABLE categories (
             meeting_id INTEGER PRIMARY KEY REFERENCES meetings(id),
             primary_job TEXT,
             handoff_topology TEXT,
             system_gravity TEXT,
             trust_surface TEXT,
-            voice_contract TEXT,
             buying_trigger TEXT,
             volume_band TEXT,
             model TEXT,
@@ -49,8 +50,6 @@ def ingest_meetings():
     with open(CSV_PATH, encoding="utf-8-sig") as f:
         rows = list(csv.DictReader(f))
 
-    conn.execute("DELETE FROM categories")
-    conn.execute("DELETE FROM meetings")
     for row in rows:
         mid = stable_id(
             row["Correo Electronico"],
@@ -90,11 +89,11 @@ def load_labels(path: Path = LABELS_PATH):
         conn.execute(
             """INSERT OR REPLACE INTO categories
                (meeting_id, primary_job, handoff_topology, system_gravity, trust_surface,
-                voice_contract, buying_trigger, volume_band, model, prompt_version, labeled_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                buying_trigger, volume_band, model, prompt_version, labeled_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 mid, row["primary_job"], row["handoff_topology"], row["system_gravity"],
-                row["trust_surface"], row["voice_contract"], row["buying_trigger"],
+                row["trust_surface"], row["buying_trigger"],
                 row["volume_band"], row["model"], row["prompt_version"], row["labeled_at"],
             ),
         )

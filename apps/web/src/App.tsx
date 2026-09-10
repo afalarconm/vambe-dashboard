@@ -60,12 +60,21 @@ function shortModelName(model: string): string {
   return slash >= 0 ? model.slice(slash + 1) : model
 }
 
+type Metrics = {
+  by_job: WinRateJob[]
+  by_handoff: WinRateHandoff[]
+  by_trigger: WinRateTrigger[]
+  by_volume_band: WinRateVolumeBand[]
+  gravity_mix: GravityMix[]
+  job_handoff_heatmap: JobHandoffHeatmap
+}
+
 const BAR_CHARTS = [
-  { title: 'Win rate by primary job', dataKey: 'byJob' as const, xKey: 'job' as const, color: CHART_COLORS.job, icon: 'chart__icon--blue', glyph: '▮' },
-  { title: 'Win rate by handoff topology', dataKey: 'byHandoff' as const, xKey: 'handoff' as const, color: CHART_COLORS.handoff, icon: 'chart__icon--sky', glyph: '⇄' },
-  { title: 'Win rate by buying trigger', dataKey: 'byTrigger' as const, xKey: 'trigger' as const, color: CHART_COLORS.trigger, icon: 'chart__icon--orange', glyph: '⚡' },
-  { title: 'System gravity mix', dataKey: 'gravityMix' as const, xKey: 'gravity' as const, color: CHART_COLORS.gravity, icon: 'chart__icon--purple', glyph: '◎' },
-  { title: 'Win rate by volume band', dataKey: 'byVolumeBand' as const, xKey: 'volume_band' as const, color: CHART_COLORS.volume, icon: 'chart__icon--teal', glyph: '▤' },
+  { title: 'Win rate by primary job', dataKey: 'by_job' as const, xKey: 'job' as const, color: CHART_COLORS.job, icon: 'chart__icon--blue', glyph: '▮' },
+  { title: 'Win rate by handoff topology', dataKey: 'by_handoff' as const, xKey: 'handoff' as const, color: CHART_COLORS.handoff, icon: 'chart__icon--sky', glyph: '⇄' },
+  { title: 'Win rate by buying trigger', dataKey: 'by_trigger' as const, xKey: 'trigger' as const, color: CHART_COLORS.trigger, icon: 'chart__icon--orange', glyph: '⚡' },
+  { title: 'System gravity mix', dataKey: 'gravity_mix' as const, xKey: 'gravity' as const, color: CHART_COLORS.gravity, icon: 'chart__icon--purple', glyph: '◎' },
+  { title: 'Win rate by volume band', dataKey: 'by_volume_band' as const, xKey: 'volume_band' as const, color: CHART_COLORS.volume, icon: 'chart__icon--teal', glyph: '▤' },
 ] as const
 
 function Chart({ title, data, xKey, fill, iconClass, glyph }: {
@@ -191,12 +200,7 @@ export default function App() {
   const [filters, setFilters] = useState<Filters | null>(null)
   const [meetings, setMeetings] = useState<Meeting[]>([])
   const [total, setTotal] = useState(0)
-  const [byJob, setByJob] = useState<WinRateJob[]>([])
-  const [byHandoff, setByHandoff] = useState<WinRateHandoff[]>([])
-  const [byTrigger, setByTrigger] = useState<WinRateTrigger[]>([])
-  const [byVolumeBand, setByVolumeBand] = useState<WinRateVolumeBand[]>([])
-  const [gravityMix, setGravityMix] = useState<GravityMix[]>([])
-  const [jobHandoffHeatmap, setJobHandoffHeatmap] = useState<JobHandoffHeatmap | null>(null)
+  const [metrics, setMetrics] = useState<Metrics | null>(null)
   const [health, setHealth] = useState<Health | null>(null)
   const [loading, setLoading] = useState(true)
   const [labeledOnly, setLabeledOnly] = useState(true)
@@ -223,28 +227,29 @@ export default function App() {
   }, [seller, closed, primaryJob, handoff, trust, trigger, q, labeledOnly])
 
   useEffect(() => {
-    Promise.all([
-      fetch(`${API}/health`).then((r) => r.json()).then(setHealth),
-      fetch(`${API}/filters`).then((r) => r.json()).then(setFilters),
-      fetch(`${API}/metrics/win-rate-by-job`).then((r) => r.json()).then(setByJob),
-      fetch(`${API}/metrics/win-rate-by-handoff`).then((r) => r.json()).then(setByHandoff),
-      fetch(`${API}/metrics/win-rate-by-trigger`).then((r) => r.json()).then(setByTrigger),
-      fetch(`${API}/metrics/win-rate-by-volume-band`).then((r) => r.json()).then(setByVolumeBand),
-      fetch(`${API}/metrics/system-gravity-mix`).then((r) => r.json()).then(setGravityMix),
-      fetch(`${API}/metrics/job-handoff-heatmap`).then((r) => r.json()).then(setJobHandoffHeatmap),
-    ]).finally(() => setLoading(false))
+    fetch(`${API}/health`).then((r) => r.json()).then(setHealth)
+    fetch(`${API}/filters`).then((r) => r.json()).then(setFilters)
   }, [])
 
   useEffect(() => {
-    fetch(`${API}/meetings?${params()}`)
-      .then((r) => r.json())
-      .then((d) => { setMeetings(d.items); setTotal(d.total) })
+    const p = params()
+    let cancelled = false
+    Promise.all([
+      fetch(`${API}/meetings?${p}`).then((r) => r.json()),
+      fetch(`${API}/metrics?${p}`).then((r) => r.json()),
+    ]).then(([meetingsRes, metricsRes]: [{ items: Meeting[]; total: number }, Metrics]) => {
+      if (cancelled) return
+      setMeetings(meetingsRes.items)
+      setTotal(meetingsRes.total)
+      setMetrics(metricsRes)
+      setLoading(false)
+    })
+    return () => { cancelled = true }
   }, [params])
 
   const filtersActive = !labeledOnly || Boolean(
     seller || closed !== '' || primaryJob || handoff || trust || trigger || q,
   )
-  const chartData = { byJob, byHandoff, byTrigger, byVolumeBand, gravityMix }
 
   if (loading) {
     return (
@@ -350,14 +355,16 @@ export default function App() {
           <Chart
             key={c.xKey}
             title={c.title}
-            data={chartData[c.dataKey] as Record<string, unknown>[]}
+            data={(metrics?.[c.dataKey] ?? []) as Record<string, unknown>[]}
             xKey={c.xKey}
             fill={c.color}
             iconClass={c.icon}
             glyph={c.glyph}
           />
         ))}
-        {jobHandoffHeatmap && <Heatmap data={jobHandoffHeatmap} />}
+        {metrics?.job_handoff_heatmap.handoffs.length ? (
+          <Heatmap data={metrics.job_handoff_heatmap} />
+        ) : null}
       </section>
 
       <section className="table-section">
