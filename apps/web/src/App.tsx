@@ -20,13 +20,17 @@ type Filters = {
 type Meeting = {
   id: number
   nombre: string
+  email: string
   seller: string
   meeting_date: string
   closed: number
+  transcript: string | null
   primary_job: string | null
   handoff_topology: string | null
+  system_gravity: string | null
   trust_surface: string | null
   buying_trigger: string | null
+  volume_band: string | null
   model: string | null
   prompt_version: string | null
 }
@@ -320,6 +324,66 @@ function Heatmap({ data, selectedJob, selectedHandoff, onSelect }: {
   )
 }
 
+function TranscriptDrawer({ meeting, onClose }: { meeting: Meeting; onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      document.body.style.overflow = prev
+    }
+  }, [onClose])
+
+  const labels = [
+    meeting.primary_job && ['Job', meeting.primary_job],
+    meeting.handoff_topology && ['Handoff', meeting.handoff_topology],
+    meeting.system_gravity && ['Gravity', meeting.system_gravity],
+    meeting.trust_surface && ['Trust', meeting.trust_surface],
+    meeting.buying_trigger && ['Trigger', meeting.buying_trigger],
+    meeting.volume_band && ['Volume', meeting.volume_band],
+  ].filter(Boolean) as [string, string][]
+
+  return (
+    <div className="drawer-scrim" onClick={onClose}>
+      <aside
+        className="drawer"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="transcript-title"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <header className="drawer__header">
+          <div>
+            <h2 id="transcript-title" className="drawer__title">{meeting.nombre}</h2>
+            <p className="drawer__meta">
+              {meeting.seller} · {meeting.meeting_date} · {meeting.closed ? 'Won' : 'Open'}
+            </p>
+          </div>
+          <button type="button" className="drawer__close" onClick={onClose} aria-label="Close transcript">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+              <path d="M6 6l12 12M18 6L6 18" />
+            </svg>
+          </button>
+        </header>
+        {labels.length > 0 && (
+          <dl className="drawer__labels">
+            {labels.map(([k, v]) => (
+              <div key={k}>
+                <dt>{k}</dt>
+                <dd>{prettyLabel(v)}</dd>
+              </div>
+            ))}
+          </dl>
+        )}
+        <h3 className="drawer__section">Transcript</h3>
+        <p className="transcript">{meeting.transcript || 'No transcript for this meeting.'}</p>
+      </aside>
+    </div>
+  )
+}
+
 export default function App() {
   const [filters, setFilters] = useState<Filters | null>(null)
   const [meetings, setMeetings] = useState<Meeting[]>([])
@@ -338,6 +402,7 @@ export default function App() {
   const [volumeBand, setVolumeBand] = useState('')
   const [q, setQ] = useState('')
   const [tab, setTab] = useState<Tab>('dashboard')
+  const [selected, setSelected] = useState<Meeting | null>(null)
 
   const params = useCallback(() => {
     const p = new URLSearchParams()
@@ -596,6 +661,7 @@ export default function App() {
           <h2 className="table-section__title">Meetings</h2>
           <span className="table-section__count">
             {meetings.length} shown{total > meetings.length ? ` · ${total.toLocaleString()} match` : ''}
+            {' · click a row for the transcript'}
           </span>
         </div>
         <div className="table-wrap">
@@ -621,8 +687,16 @@ export default function App() {
               </thead>
               <tbody>
                 {meetings.map((m) => (
-                  <tr key={m.id}>
-                    <td>{m.nombre}</td>
+                  <tr
+                    key={m.id}
+                    className="table-row--clickable"
+                    onClick={() => setSelected(m)}
+                  >
+                    <td>
+                      <button type="button" className="row-open" onClick={() => setSelected(m)}>
+                        {m.nombre}
+                      </button>
+                    </td>
                     <td>{m.seller}</td>
                     <td>{m.meeting_date}</td>
                     <td>
@@ -651,6 +725,7 @@ export default function App() {
           )}
         </div>
       </section>
+      {selected && <TranscriptDrawer meeting={selected} onClose={() => setSelected(null)} />}
         </>
       )}
       </main>

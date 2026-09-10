@@ -201,9 +201,9 @@ def meetings(
     )
     where = where_sql(clauses)
     sql = f"""
-        SELECT m.id, m.nombre, m.email, m.seller, m.meeting_date, m.closed,
-               c.primary_job, c.handoff_topology, c.trust_surface, c.buying_trigger,
-               c.volume_band, c.model, c.prompt_version
+        SELECT m.id, m.nombre, m.email, m.seller, m.meeting_date, m.closed, m.transcript,
+               c.primary_job, c.handoff_topology, c.system_gravity, c.trust_surface,
+               c.buying_trigger, c.volume_band, c.model, c.prompt_version
         FROM meetings m
         LEFT JOIN categories c ON c.meeting_id = m.id
         {where}
