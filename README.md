@@ -7,7 +7,7 @@ Sales meeting explorer over ~10k Spanish transcripts: filter meetings, compare w
 ## Run locally
 
 ```bash
-pip install -r apps/api/requirements.txt
+pip install -r requirements.txt
 python scripts/ingest.py
 python scripts/load_labels.py
 cd apps/web && npm install && npm run build && cd ../..
@@ -19,7 +19,7 @@ uvicorn main:app --reload --port 8080
 
 ```bash
 # terminal 1
-pip install -r apps/api/requirements.txt
+pip install -r requirements.txt
 python scripts/ingest.py && python scripts/load_labels.py
 uvicorn main:app --reload --port 8000
 
@@ -99,7 +99,3 @@ Build (`scripts/vercel_build.sh`): `npm run build` → `ingest` → `load_labels
 | `GET /metrics/win-rate-by-handoff` | Win rate by `handoff_topology` |
 | `GET /metrics/win-rate-by-trigger` | Win rate by `buying_trigger` |
 | `GET /metrics/system-gravity-mix` | Share by `system_gravity` |
-
-## Other deploy
-
-Docker: `docker build -t vambe-dashboard . && docker run -p 8080:8080 vambe-dashboard`
