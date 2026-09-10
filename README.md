@@ -1,36 +1,96 @@
 # Vambe Take-Home
 
-Sales meeting explorer: ingest CSV → load labels → FastAPI + React dashboard.
+**Live demo:** [temporary-sonic-violet-79ppfpr.vercel.app](https://temporary-sonic-violet-79ppfpr.vercel.app) — check [`/health`](https://temporary-sonic-violet-79ppfpr.vercel.app/health)
 
-## Vercel deploy
+Sales meeting explorer over Spanish transcripts: filter meetings, compare win rates by category, inspect Gemma labels.
 
-1. Import **afalarconm/vambe-dashboard** (GitHub or Git URL) in [Vercel](https://vercel.com/new)
-2. Framework preset: **Other** (auto-detects FastAPI via `main.py`)
-3. Root directory: **`.`** (repo root)
-4. Build/install commands are in `vercel.json` + `pyproject.toml` — no extra env vars needed
-5. Deploy — build runs `npm run build`, `ingest`, `load_labels`; SQLite is read-only at runtime
-
-No OpenRouter at runtime. Demo serves 95 Gemma `llm-v1` labels from baked `data/meetings.db`.
-
-## Local
+## Run locally
 
 ```bash
-python scripts/ingest.py && python scripts/load_labels.py
 pip install -r requirements.txt
-cd apps/web && npm install && npm run build
+python scripts/ingest.py
+python scripts/load_labels.py
+cd apps/web && npm install && npm run build && cd ../..
 uvicorn main:app --reload --port 8080
 # → http://localhost:8080
 ```
 
-Dev with HMR: `cd apps/web && npm run dev` (proxies `/api` → port 8000; run API separately).
+**Dev (HMR)** — API and UI on separate ports; Vite proxies `/api` → FastAPI:
 
-Optional — re-run LLM labeling (requires `OPENROUTER_API_KEY`):
+```bash
+# terminal 1
+pip install -r requirements.txt
+python scripts/ingest.py && python scripts/load_labels.py
+uvicorn main:app --reload --port 8000
+
+# terminal 2
+cd apps/web && npm run dev
+# → http://localhost:5173
+```
+
+## Architecture
+
+```
+CSV ──ingest──► SQLite (meetings)
+labels_llm_v1.json ──load_labels──► SQLite (categories)
+                                      │
+FastAPI (apps/api) ◄── read-only ────┘
+       │
+       ├── JSON /meetings, /filters, /metrics/*
+       └── static ──► React (apps/web/dist)
+```
+
+**Stack:** FastAPI + Vite split monorepo — Python owns ingest, LLM batch, and SQLite; React owns the dashboard. Thin read API + baked SQLite keeps the demo easy to skim and run.
+
+| Layer | Role |
+|-------|------|
+| `scripts/` | Offline ingest + LLM labeling pipeline |
+| `apps/api/` | Read-only SQLite queries, CORS, metrics |
+| `apps/web/` | Vite + React dashboard (Recharts) |
+| `main.py` | Vercel entrypoint (`from apps.api.main import app`) |
+
+### Dimensions (7)
+
+Six locked enums (`scripts/enums.py`) plus derived volume — one line per axis:
+
+| Dimension | Why |
+|-----------|-----|
+| `primary_job` | Maps discovery notes to the bot capability the prospect wants (booking, catalog, quoting, FAQ…); packaging/demo for Sales + feature demand for Product. |
+| `handoff_topology` | How the bot involves humans (bot-only, generic, specialist, role-based); implementation shape + win-rate lever. |
+| `system_gravity` | How glued to existing systems (standalone → named → must integrate); SE load / cycle-time / delivery cost. |
+| `trust_surface` | Domain sensitivity (standard → health → regulated → discretion); compliance tone, guardrails, approval. |
+| `voice_contract` | Expected bot tone; delivery constraint / brand fit — wrong voice kills a good demo. |
+| `buying_trigger` | Why shopping now; seller coaching / pipeline quality. |
+| `volume_band` | Normalize stated WhatsApp volume into bands for capacity/pricing/win-rate without inventing numbers. |
+
+Fixed enums keep LLM output validatable and metrics comparable across meetings.
+
+### Labels (offline only)
+
+Offline Gemma batch → `data/labels_llm_v1.json` → Vercel build runs `load_labels` into read-only SQLite. UI never calls OpenRouter — reproducible deploys, no prod API key.
+
+Optional re-labeling (requires `OPENROUTER_API_KEY`):
 
 ```bash
 export OPENROUTER_API_KEY=your_key
 python scripts/categorize.py --limit 100 --export
 python scripts/load_labels.py
 ```
+
+- **Batch:** `--limit N` controls sample size; progress logged every 25 rows; retries on 429/503.
+- **Export:** `--export` writes `data/labels_llm_v1.json` (committed artifact).
+- **Re-export:** `python scripts/export_labels.py` dumps DB → JSON.
+
+### Metrics
+
+Win rate × `primary_job` / `handoff_topology` / `buying_trigger` + `system_gravity` mix — each chart maps to a Vambe role (Product, Solutions, Sales, SE). All metrics use LLM categories only.
+
+### Key decisions
+
+- **Baked labels, no LLM at runtime** — offline Gemma → JSON → SQLite at build; production serves pre-labeled data only.
+- **FastAPI + Vite split** — Python pipeline vs React dashboard; single process in prod, separate ports in dev.
+- **Enum-locked taxonomy** — schema validation on LLM JSON; comparable metrics across meetings.
+- **Read-only runtime DB** — `mode=ro` URI; ingest/labeling are build-time or dev-only scripts.
 
 ## API
 
@@ -43,7 +103,5 @@ python scripts/load_labels.py
 | `GET /metrics/win-rate-by-handoff` | Win rate by `handoff_topology` |
 | `GET /metrics/win-rate-by-trigger` | Win rate by `buying_trigger` |
 | `GET /metrics/system-gravity-mix` | Share by `system_gravity` |
-
-## Other deploy
-
-Docker: `docker build -t vambe-dashboard . && docker run -p 8080:8080 vambe-dashboard`
+| `GET /metrics/win-rate-by-volume-band` | Win rate by `volume_band` |
+| `GET /metrics/job-handoff-heatmap` | Win rate matrix: `primary_job` × `handoff_topology` |

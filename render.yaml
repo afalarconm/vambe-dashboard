@@ -1,9 +1,0 @@
-services:
-  - type: web
-    name: vambe-dashboard
-    runtime: docker
-    plan: free
-    healthCheckPath: /health
-    envVars:
-      - key: PORT
-        value: 8080
