@@ -6,6 +6,7 @@ import random
 import re
 import sqlite3
 import sys
+import time
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
@@ -172,9 +173,9 @@ def llm_classify(transcript: str, model: str, fallback: str) -> dict | None:
                 "Content-Type": "application/json",
             },
         )
-        for attempt in range(2):
+        for attempt in range(4):
             try:
-                with urllib.request.urlopen(req, timeout=60) as resp:
+                with urllib.request.urlopen(req, timeout=90) as resp:
                     data = json.loads(resp.read())
                 content = data["choices"][0]["message"]["content"]
                 match = re.search(r"\{[^{}]+\}", content, re.S)
@@ -183,42 +184,64 @@ def llm_classify(transcript: str, model: str, fallback: str) -> dict | None:
                 cats = json.loads(match.group())
                 if validate(cats):
                     return cats
-            except (urllib.error.URLError, json.JSONDecodeError, KeyError, IndexError):
-                if attempt == 0:
+                break
+            except urllib.error.HTTPError as e:
+                if e.code in (429, 503) and attempt < 3:
+                    time.sleep(min(2 ** attempt * 2, 30))
                     continue
+                break
+            except (urllib.error.URLError, json.JSONDecodeError, KeyError, IndexError, TimeoutError):
+                if attempt < 3:
+                    time.sleep(2)
+                    continue
+                break
     return None
 
 
-def run(use_llm: bool):
+def run(use_llm: bool, limit: int, export: Path | None):
     random.seed(42)
     conn = sqlite3.connect(DB_PATH)
-    ids = stratified_sample(conn)
+    ids = stratified_sample(conn, limit)
     model = os.environ.get("OPENROUTER_MODEL", "google/gemma-3-27b-it")
     fallback = "google/gemini-2.0-flash-001"
     prompt_version = "llm-v1" if use_llm else "heuristic-v1"
     label_model = model if use_llm else "heuristic"
+    t0 = time.time()
 
     ok, skip = 0, 0
-    for mid in ids:
+    for i, mid in enumerate(ids, 1):
         transcript = conn.execute("SELECT transcript FROM meetings WHERE id=?", (mid,)).fetchone()[0]
         if use_llm:
             cats = llm_classify(transcript, model, fallback)
             if not cats:
                 skip += 1
+                if i % 25 == 0:
+                    print(f"progress {i}/{len(ids)} ok={ok} skip={skip}", flush=True)
                 continue
+            time.sleep(0.3)
         else:
             cats = heuristic(transcript)
         save_category(conn, mid, cats, label_model, prompt_version)
         ok += 1
+        if use_llm and i % 25 == 0:
+            print(f"progress {i}/{len(ids)} ok={ok} skip={skip}", flush=True)
 
     conn.commit()
     conn.close()
+    elapsed = time.time() - t0
     mode = "LLM" if use_llm else "heuristic"
-    print(f"{mode}: labeled {ok}, skipped {skip}")
+    print(f"{mode}: labeled {ok}, skipped {skip}, elapsed {elapsed:.0f}s")
+
+    if use_llm and export:
+        from export_labels import export_labels
+        export_labels(export)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--llm", action="store_true")
+    parser.add_argument("--limit", type=int, default=100)
+    parser.add_argument("--export", nargs="?", const=str(ROOT / "data" / "labels_llm_v1.json"))
     args = parser.parse_args()
-    run(args.llm)
+    export_path = Path(args.export) if args.export else None
+    run(args.llm, args.limit, export_path if args.llm else None)
