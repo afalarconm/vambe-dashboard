@@ -2,7 +2,10 @@ import { useCallback, useEffect, useState } from 'react'
 import {
   Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts'
+import DimensionsPage from './DimensionsPage'
 import './App.css'
+
+type Tab = 'dashboard' | 'dimensions'
 
 type Filters = {
   sellers: string[]
@@ -122,6 +125,7 @@ export default function App() {
   const [trust, setTrust] = useState('')
   const [trigger, setTrigger] = useState('')
   const [q, setQ] = useState('')
+  const [tab, setTab] = useState<Tab>('dashboard')
 
   const params = useCallback(() => {
     const p = new URLSearchParams()
@@ -181,6 +185,29 @@ export default function App() {
         </div>
       </header>
 
+      <nav className="tabs" aria-label="Main navigation">
+        <button
+          type="button"
+          className={`tabs__btn${tab === 'dashboard' ? ' tabs__btn--active' : ''}`}
+          aria-current={tab === 'dashboard' ? 'page' : undefined}
+          onClick={() => setTab('dashboard')}
+        >
+          Dashboard
+        </button>
+        <button
+          type="button"
+          className={`tabs__btn${tab === 'dimensions' ? ' tabs__btn--active' : ''}`}
+          aria-current={tab === 'dimensions' ? 'page' : undefined}
+          onClick={() => setTab('dimensions')}
+        >
+          Dimensions
+        </button>
+      </nav>
+
+      {tab === 'dimensions' ? (
+        <DimensionsPage />
+      ) : (
+        <>
       <section className="filters" aria-label="Filters">
         <select value={seller} onChange={(e) => setSeller(e.target.value)} aria-label="Filter by seller">
           <option value="">All sellers</option>
@@ -275,6 +302,8 @@ export default function App() {
           )}
         </div>
       </section>
+        </>
+      )}
     </div>
   )
 }
