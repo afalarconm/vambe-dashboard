@@ -42,9 +42,12 @@ def win_rate(conn, group_col: str, alias: str):
 @app.get("/health")
 def health():
     conn = db()
-    n = conn.execute("SELECT COUNT(*) FROM categories WHERE prompt_version='llm-v1'").fetchone()[0]
+    labeled = conn.execute(
+        "SELECT COUNT(*) FROM categories WHERE prompt_version IS NOT NULL"
+    ).fetchone()[0]
+    total = conn.execute("SELECT COUNT(*) FROM meetings").fetchone()[0]
     conn.close()
-    return {"ok": True, "llm_labels": n}
+    return {"ok": True, "llm_labels": labeled, "total_meetings": total}
 
 
 @app.get("/meetings")
@@ -56,10 +59,13 @@ def meetings(
     trust_surface: str | None = None,
     buying_trigger: str | None = None,
     q: str | None = None,
+    labeled_only: bool = False,
     limit: int = Query(50, le=200),
     offset: int = 0,
 ):
     clauses, params = [], []
+    if labeled_only:
+        clauses.append("c.prompt_version IS NOT NULL")
     if seller:
         clauses.append("m.seller = ?")
         params.append(seller)
