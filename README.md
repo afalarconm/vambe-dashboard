@@ -8,8 +8,7 @@ Sales meeting explorer over Spanish transcripts: filter meetings, compare win ra
 
 ```bash
 pip install -r requirements.txt
-python scripts/ingest.py
-python scripts/load_labels.py
+python scripts/bake_db.py
 cd apps/web && npm install && npm run build && cd ../..
 uvicorn main:app --reload --port 8080
 # → http://localhost:8080
@@ -20,7 +19,7 @@ uvicorn main:app --reload --port 8080
 ```bash
 # terminal 1
 pip install -r requirements.txt
-python scripts/ingest.py && python scripts/load_labels.py
+python scripts/bake_db.py
 uvicorn main:app --reload --port 8000
 
 # terminal 2
@@ -30,28 +29,40 @@ cd apps/web && npm run dev
 
 ## Architecture
 
+**Label → Bake → Serve** — offline batch labeling, baked read model, read-only API at runtime.
+
 ```
-CSV ──ingest──► SQLite (meetings)
-labels_llm_v1.json ──load_labels──► SQLite (categories)
-                                      │
+                    ┌─ Label (offline, optional) ─────────────────────┐
+                    │  OpenRouter LLM → data/labels_llm_v1.json       │
+                    └─────────────────────────────────────────────────┘
+                                          │
+CSV ──Bake──► SQLite (meetings + categories) ◄── labels_llm_v1.json
+                    │
 FastAPI (apps/api) ◄── read-only ────┘
        │
        ├── JSON /meetings, /filters, /metrics/*
        └── static ──► React (apps/web/dist)
 ```
 
-**Stack:** FastAPI + Vite split monorepo — Python owns ingest, LLM batch, and SQLite; React owns the dashboard. Thin read API + baked SQLite keeps the demo easy to skim and run.
+| Step | Script | Role |
+|------|--------|------|
+| **Label** | `scripts/labeling/` | Offline OpenRouter batch → `data/labels_llm_v1.json` |
+| **Bake** | `scripts/bake_db.py` | CSV ingest + load labels into SQLite |
+| **Serve** | `apps/api/` + `main.py` | Read-only queries; no LLM at runtime |
+
+**Stack:** FastAPI + Vite split monorepo — Python owns the offline pipeline and SQLite; React owns the dashboard. Thin read API + baked SQLite keeps the demo easy to skim and run.
 
 | Layer | Role |
 |-------|------|
-| `scripts/` | Offline ingest + LLM labeling pipeline |
+| `scripts/labeling/` | Offline LLM labeling (taxonomy, OpenRouter client, batch CLI) |
+| `scripts/bake_db.py` | Build-time bake: CSV + labels JSON → SQLite |
 | `apps/api/` | Read-only SQLite queries, CORS, metrics |
 | `apps/web/` | Vite + React dashboard (Recharts) |
 | `main.py` | Vercel entrypoint (`from apps.api.main import app`) |
 
 ### Dimensions (7)
 
-Six locked enums (`scripts/enums.py`) plus derived volume — one line per axis:
+Six locked taxonomy values (`scripts/labeling/taxonomy.py`) plus derived volume — one line per axis:
 
 | Dimension | Why |
 |-----------|-----|
@@ -63,23 +74,23 @@ Six locked enums (`scripts/enums.py`) plus derived volume — one line per axis:
 | `buying_trigger` | Why shopping now; seller coaching / pipeline quality. |
 | `volume_band` | Normalize stated WhatsApp volume into bands for capacity/pricing/win-rate without inventing numbers. |
 
-Fixed enums keep LLM output validatable and metrics comparable across meetings.
+Fixed taxonomy keeps LLM output validatable and metrics comparable across meetings.
 
 ### Labels (offline only)
 
-Offline Gemma batch → `data/labels_llm_v1.json` → Vercel build runs `load_labels` into read-only SQLite. UI never calls OpenRouter — reproducible deploys, no prod API key.
+Offline Gemma batch → `data/labels_llm_v1.json` → Vercel build runs `bake_db.py` into read-only SQLite. UI never calls OpenRouter — reproducible deploys, no prod API key.
 
-Optional re-labeling (requires `OPENROUTER_API_KEY`):
+Optional re-labeling (requires `OPENROUTER_API_KEY`; run Bake after to refresh SQLite):
 
 ```bash
 export OPENROUTER_API_KEY=your_key
-python scripts/categorize.py --limit 100 --export
-python scripts/load_labels.py
+python -m scripts.labeling.label_meetings --limit 100 --export
+python scripts/bake_db.py
 ```
 
 - **Batch:** `--limit N` controls sample size; progress logged every 25 rows; retries on 429/503.
 - **Export:** `--export` writes `data/labels_llm_v1.json` (committed artifact).
-- **Re-export:** `python scripts/export_labels.py` dumps DB → JSON.
+- **Re-export:** `python -m scripts.labeling.export_labels` dumps DB → JSON.
 
 ### Metrics
 
@@ -90,7 +101,8 @@ Win rate × `primary_job` / `handoff_topology` / `buying_trigger` + `system_grav
 - **Baked labels, no LLM at runtime** — offline Gemma → JSON → SQLite at build; production serves pre-labeled data only.
 - **FastAPI + Vite split** — Python pipeline vs React dashboard; single process in prod, separate ports in dev.
 - **Enum-locked taxonomy** — schema validation on LLM JSON; comparable metrics across meetings.
-- **Read-only runtime DB** — `mode=ro` URI; ingest/labeling are build-time or dev-only scripts.
+- **Read-only runtime DB** — `mode=ro` URI; labeling/bake are build-time or dev-only scripts.
+- **SQLite table `categories`** — kept for API stability; script layer uses "labels" terminology.
 
 ## API
 
