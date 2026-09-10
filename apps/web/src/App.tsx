@@ -43,6 +43,8 @@ type JobHandoffHeatmap = {
   min_sample: number
 }
 
+type Health = { ok: boolean; llm_labels: number; total_meetings: number }
+
 const API = import.meta.env.DEV ? '/api' : ''
 
 const CHART_COLORS = {
@@ -190,7 +192,9 @@ export default function App() {
   const [byVolumeBand, setByVolumeBand] = useState<WinRateVolumeBand[]>([])
   const [gravityMix, setGravityMix] = useState<GravityMix[]>([])
   const [jobHandoffHeatmap, setJobHandoffHeatmap] = useState<JobHandoffHeatmap | null>(null)
+  const [health, setHealth] = useState<Health | null>(null)
   const [loading, setLoading] = useState(true)
+  const [labeledOnly, setLabeledOnly] = useState(true)
   const [seller, setSeller] = useState('')
   const [closed, setClosed] = useState('')
   const [primaryJob, setPrimaryJob] = useState('')
@@ -209,11 +213,13 @@ export default function App() {
     if (trust) p.set('trust_surface', trust)
     if (trigger) p.set('buying_trigger', trigger)
     if (q) p.set('q', q)
+    if (labeledOnly) p.set('labeled_only', 'true')
     return p
-  }, [seller, closed, primaryJob, handoff, trust, trigger, q])
+  }, [seller, closed, primaryJob, handoff, trust, trigger, q, labeledOnly])
 
   useEffect(() => {
     Promise.all([
+      fetch(`${API}/health`).then((r) => r.json()).then(setHealth),
       fetch(`${API}/filters`).then((r) => r.json()).then(setFilters),
       fetch(`${API}/metrics/win-rate-by-job`).then((r) => r.json()).then(setByJob),
       fetch(`${API}/metrics/win-rate-by-handoff`).then((r) => r.json()).then(setByHandoff),
@@ -230,7 +236,9 @@ export default function App() {
       .then((d) => { setMeetings(d.items); setTotal(d.total) })
   }, [params])
 
-  const labeled = meetings.filter((m) => m.prompt_version).length
+  const filtersActive = !labeledOnly || Boolean(
+    seller || closed !== '' || primaryJob || handoff || trust || trigger || q,
+  )
   const chartData = { byJob, byHandoff, byTrigger, byVolumeBand, gravityMix }
 
   if (loading) {
@@ -255,8 +263,14 @@ export default function App() {
           </div>
         </div>
         <div className="app-header__stats">
-          <span className="stat-pill">{total.toLocaleString()} meetings</span>
-          <span className="stat-pill stat-pill--neutral">{labeled} labeled in view</span>
+          {health && (
+            <span className="stat-pill">
+              {health.llm_labels.toLocaleString()} labeled · {health.total_meetings.toLocaleString()} total
+            </span>
+          )}
+          {filtersActive && (
+            <span className="stat-pill stat-pill--neutral">{total.toLocaleString()} in view</span>
+          )}
         </div>
       </header>
 
@@ -284,6 +298,14 @@ export default function App() {
       ) : (
         <>
       <section className="filters" aria-label="Filters">
+        <select
+          value={labeledOnly ? 'labeled' : 'all'}
+          onChange={(e) => setLabeledOnly(e.target.value === 'labeled')}
+          aria-label="Show labeled or all meetings"
+        >
+          <option value="labeled">Labeled</option>
+          <option value="all">All meetings</option>
+        </select>
         <select value={seller} onChange={(e) => setSeller(e.target.value)} aria-label="Filter by seller">
           <option value="">All sellers</option>
           {filters?.sellers.map((s) => <option key={s} value={s}>{s}</option>)}
@@ -336,7 +358,9 @@ export default function App() {
       <section className="table-section">
         <div className="table-section__header">
           <h2 className="table-section__title">Meetings</h2>
-          <span className="table-section__count">{meetings.length} shown</span>
+          <span className="table-section__count">
+            {meetings.length} shown{total > meetings.length ? ` · ${total.toLocaleString()} match` : ''}
+          </span>
         </div>
         <div className="table-wrap">
           {meetings.length === 0 ? (
