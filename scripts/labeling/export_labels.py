@@ -1,9 +1,8 @@
-#!/usr/bin/env python3
 import json
 import sqlite3
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parent.parent.parent
 DB_PATH = ROOT / "data" / "meetings.db"
 DEFAULT_OUT = ROOT / "data" / "labels_llm_v1.json"
 
