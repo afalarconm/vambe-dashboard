@@ -8,7 +8,7 @@ Sales-meeting explorer over 10k Spanish transcripts: filter meetings, compare wi
 
 ![Label, bake, serve](docs/how-it-works.png)
 
-Meetings never go to Gemma directly. They land in SQLite first; the labeler reads a sample of those transcripts.
+Bake loads transcripts into SQLite first. The labeler reads a sample of those rows and sends them to OpenRouter.
 
 1. **Bake** loads the CSV into `meetings`.
 2. **Label** (optional, offline) samples those rows, sends each transcript to OpenRouter, and writes `data/labels_llm_v1.json`.
