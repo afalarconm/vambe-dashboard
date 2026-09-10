@@ -45,7 +45,7 @@ export const DIMENSIONS: DimensionDef[] = [
     ],
   },
     {
-    key: 'trust_surface',
+      key: 'trust_surface',
     title: 'Trust surface',
     why: 'Domain sensitivity — sets compliance tone and who must approve.',
     enums: [

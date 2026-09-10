@@ -1,6 +1,6 @@
-import { Fragment, useCallback, useEffect, useState } from 'react'
+import { Fragment, useCallback, useEffect, useState, type ReactNode } from 'react'
 import {
-  Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis,
+  Bar, BarChart, CartesianGrid, LabelList, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts'
 import DimensionsPage from './DimensionsPage'
 import './App.css'
@@ -70,12 +70,79 @@ type Metrics = {
 }
 
 const BAR_CHARTS = [
-  { title: 'Win rate by primary job', dataKey: 'by_job' as const, xKey: 'job' as const, color: CHART_COLORS.job, icon: 'chart__icon--blue', glyph: '▮' },
-  { title: 'Win rate by handoff topology', dataKey: 'by_handoff' as const, xKey: 'handoff' as const, color: CHART_COLORS.handoff, icon: 'chart__icon--sky', glyph: '⇄' },
-  { title: 'Win rate by buying trigger', dataKey: 'by_trigger' as const, xKey: 'trigger' as const, color: CHART_COLORS.trigger, icon: 'chart__icon--orange', glyph: '⚡' },
-  { title: 'System gravity mix', dataKey: 'gravity_mix' as const, xKey: 'gravity' as const, color: CHART_COLORS.gravity, icon: 'chart__icon--purple', glyph: '◎' },
-  { title: 'Win rate by volume band', dataKey: 'by_volume_band' as const, xKey: 'volume_band' as const, color: CHART_COLORS.volume, icon: 'chart__icon--teal', glyph: '▤' },
+  { title: 'Win rate by primary job', dataKey: 'by_job' as const, xKey: 'job' as const, color: CHART_COLORS.job, icon: 'chart__icon--blue', glyph: 'bars' as const },
+  { title: 'Win rate by handoff topology', dataKey: 'by_handoff' as const, xKey: 'handoff' as const, color: CHART_COLORS.handoff, icon: 'chart__icon--sky', glyph: 'handoff' as const },
+  { title: 'Win rate by buying trigger', dataKey: 'by_trigger' as const, xKey: 'trigger' as const, color: CHART_COLORS.trigger, icon: 'chart__icon--orange', glyph: 'trigger' as const },
+  { title: 'System gravity mix', dataKey: 'gravity_mix' as const, xKey: 'gravity' as const, color: CHART_COLORS.gravity, icon: 'chart__icon--purple', glyph: 'gravity' as const },
+  { title: 'Win rate by volume band', dataKey: 'by_volume_band' as const, xKey: 'volume_band' as const, color: CHART_COLORS.volume, icon: 'chart__icon--teal', glyph: 'volume' as const },
 ] as const
+
+type Glyph = 'bars' | 'handoff' | 'trigger' | 'gravity' | 'volume' | 'grid'
+
+function ChartGlyph({ name }: { name: Glyph }) {
+  return (
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      {name === 'bars' && (
+        <>
+          <path d="M6 20V10" />
+          <path d="M12 20V4" />
+          <path d="M18 20v-6" />
+        </>
+      )}
+      {name === 'handoff' && (
+        <>
+          <path d="M8 8H4v4" />
+          <path d="M4 8l6 6" />
+          <path d="M16 16h4v-4" />
+          <path d="M20 16l-6-6" />
+        </>
+      )}
+      {name === 'trigger' && <path d="M13 3L4 14h7l-1 7 9-11h-7l1-7z" />}
+      {name === 'gravity' && (
+        <>
+          <circle cx="12" cy="12" r="3" />
+          <circle cx="12" cy="12" r="8" />
+        </>
+      )}
+      {name === 'volume' && (
+        <>
+          <rect x="4" y="4" width="7" height="7" rx="1" />
+          <rect x="13" y="4" width="7" height="7" rx="1" />
+          <rect x="4" y="13" width="7" height="7" rx="1" />
+          <rect x="13" y="13" width="7" height="7" rx="1" />
+        </>
+      )}
+      {name === 'grid' && (
+        <>
+          <rect x="3" y="3" width="18" height="18" rx="2" />
+          <path d="M3 9h18M3 15h18M9 3v18M15 3v18" />
+        </>
+      )}
+    </svg>
+  )
+}
+
+function prettyLabel(value: unknown) {
+  return String(value ?? '').replace(/_/g, ' ')
+}
+
+function FilterField({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <label className="filter-field">
+      <span className="filter-field__label">{label}</span>
+      {children}
+    </label>
+  )
+}
+
+const TOOLTIP_STYLE = {
+  borderRadius: 'var(--radius-lg)',
+  border: '1px solid var(--color-border)',
+  background: 'var(--color-surface)',
+  fontFamily: 'var(--font-sans)',
+  fontSize: '0.8125rem',
+  boxShadow: 'var(--shadow-md)',
+} as const
 
 function Chart({ title, data, xKey, fill, iconClass, glyph }: {
   title: string
@@ -83,55 +150,58 @@ function Chart({ title, data, xKey, fill, iconClass, glyph }: {
   xKey: string
   fill: string
   iconClass: string
-  glyph: string
+  glyph: Glyph
 }) {
   const isGravity = xKey === 'gravity'
+  const valueKey = isGravity ? 'count' : 'win_rate'
+  const height = Math.max(128, data.length * 36 + 8)
 
   return (
-    <div className="chart">
+    <figure className="chart">
       <div className="chart__header">
-        <span className={`chart__icon ${iconClass}`} aria-hidden>{glyph}</span>
+        <span className={`chart__icon ${iconClass}`} aria-hidden>
+          <ChartGlyph name={glyph} />
+        </span>
         <h2>{title}</h2>
       </div>
-      <ResponsiveContainer width="100%" height={240}>
-        <BarChart data={data} margin={{ bottom: 50 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
-          <XAxis
-            dataKey={xKey}
-            angle={-30}
-            textAnchor="end"
-            interval={0}
-            tick={{ fontSize: 10, fill: 'var(--color-text-muted)' }}
-            axisLine={{ stroke: 'var(--color-border)' }}
-            tickLine={{ stroke: 'var(--color-border)' }}
-          />
-          <YAxis
-            unit={isGravity ? '' : '%'}
-            domain={isGravity ? undefined : [0, 100]}
-            tick={{ fontSize: 11, fill: 'var(--color-text-muted)' }}
-            axisLine={{ stroke: 'var(--color-border)' }}
-            tickLine={{ stroke: 'var(--color-border)' }}
-          />
-          <Tooltip
-            formatter={(v) => [isGravity ? v : `${v ?? 0}%`, isGravity ? 'Count' : 'Win rate']}
-            contentStyle={{
-              borderRadius: 'var(--radius-lg)',
-              border: '1px solid var(--color-border)',
-              background: 'var(--color-surface)',
-              fontFamily: 'var(--font-sans)',
-              fontSize: '0.8125rem',
-              boxShadow: 'var(--shadow-md)',
-            }}
-            labelStyle={{ fontWeight: 600, color: 'var(--color-text)' }}
-          />
-          <Bar
-            dataKey={isGravity ? 'count' : 'win_rate'}
-            fill={fill}
-            radius={[6, 6, 0, 0]}
-          />
-        </BarChart>
-      </ResponsiveContainer>
-    </div>
+      {data.length === 0 ? (
+        <p className="chart__empty">No labeled rows in this filter.</p>
+      ) : (
+        <ResponsiveContainer width="100%" height={height}>
+          <BarChart data={data} layout="vertical" margin={{ top: 4, right: 44, bottom: 4, left: 4 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" horizontal={false} />
+            <XAxis
+              type="number"
+              domain={isGravity ? [0, 'auto'] : [0, 100]}
+              hide
+            />
+            <YAxis
+              type="category"
+              dataKey={xKey}
+              width={148}
+              tickFormatter={prettyLabel}
+              tick={{ fontSize: 11, fill: 'var(--color-text-muted)' }}
+              axisLine={false}
+              tickLine={false}
+            />
+            <Tooltip
+              formatter={(v) => [isGravity ? v : `${v ?? 0}%`, isGravity ? 'Count' : 'Win rate']}
+              labelFormatter={prettyLabel}
+              contentStyle={TOOLTIP_STYLE}
+              labelStyle={{ fontWeight: 600, color: 'var(--color-text)' }}
+            />
+            <Bar dataKey={valueKey} fill={fill} radius={[0, 4, 4, 0]} maxBarSize={18}>
+              <LabelList
+                dataKey={valueKey}
+                position="right"
+                formatter={(v) => (isGravity ? String(v ?? '') : `${v ?? 0}%`)}
+                style={{ fontSize: 11, fill: 'var(--color-text-muted)' }}
+              />
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      )}
+    </figure>
   )
 }
 
@@ -149,23 +219,25 @@ function Heatmap({ data }: { data: JobHandoffHeatmap }) {
   )
 
   return (
-    <div className="chart chart--heatmap">
+    <figure className="chart chart--heatmap">
       <div className="chart__header">
-        <span className="chart__icon chart__icon--green" aria-hidden>▦</span>
+        <span className="chart__icon chart__icon--green" aria-hidden>
+          <ChartGlyph name="grid" />
+        </span>
         <h2>Win rate: job × handoff</h2>
       </div>
       <div className="heatmap-wrap">
         <div
           className="heatmap"
-          style={{ gridTemplateColumns: `minmax(7rem, 1.2fr) repeat(${data.handoffs.length}, 1fr)` }}
+          style={{ gridTemplateColumns: `minmax(8.5rem, 11rem) repeat(${data.handoffs.length}, 1fr)` }}
         >
           <div className="heatmap__corner" />
           {data.handoffs.map((h) => (
-            <div key={h} className="heatmap__col-label" title={h}>{h.replace(/_/g, ' ')}</div>
+            <div key={h} className="heatmap__col-label" title={prettyLabel(h)}>{prettyLabel(h)}</div>
           ))}
           {data.jobs.map((job) => (
             <Fragment key={job}>
-              <div className="heatmap__row-label" title={job}>{job.replace(/_/g, ' ')}</div>
+              <div className="heatmap__row-label" title={prettyLabel(job)}>{prettyLabel(job)}</div>
               {data.handoffs.map((handoff) => {
                 const cell = lookup.get(`${job}|${handoff}`)
                 const thin = !cell || cell.total < data.min_sample
@@ -174,7 +246,7 @@ function Heatmap({ data }: { data: JobHandoffHeatmap }) {
                     key={`${job}|${handoff}`}
                     className={`heatmap__cell${thin ? ' heatmap__cell--thin' : ''}`}
                     style={thin ? undefined : { background: heatColor(cell!.win_rate) }}
-                    title={cell ? `${job} × ${handoff}: ${cell.win_rate}% (${cell.wins}/${cell.total})` : 'No data'}
+                    title={cell ? `${prettyLabel(job)} × ${prettyLabel(handoff)}: ${cell.win_rate}% (${cell.wins}/${cell.total})` : 'No data'}
                   >
                     {cell ? (
                       thin ? <span className="heatmap__n">n={cell.total}</span> : (
@@ -191,8 +263,15 @@ function Heatmap({ data }: { data: JobHandoffHeatmap }) {
           ))}
         </div>
       </div>
-      <p className="heatmap__legend">Cells with n &lt; {data.min_sample} are greyed out.</p>
-    </div>
+      <div className="heatmap__legend">
+        <span>Cells with n &lt; {data.min_sample} are greyed out.</span>
+        <span className="heatmap__scale" aria-hidden>
+          <span>0%</span>
+          <span className="heatmap__scale-bar" />
+          <span>100%</span>
+        </span>
+      </div>
+    </figure>
   )
 }
 
@@ -262,8 +341,9 @@ export default function App() {
     )
   }
 
-  return (
+    return (
     <div className="app">
+      <a className="skip-link" href="#main">Skip to content</a>
       <header className="app-header">
         <div className="app-header__brand">
           <div className="app-header__logo" aria-hidden>V</div>
@@ -303,50 +383,65 @@ export default function App() {
         </button>
       </nav>
 
+      <main id="main">
       {tab === 'dimensions' ? (
         <DimensionsPage />
       ) : (
         <>
       <section className="filters" aria-label="Filters">
-        <select
-          value={labeledOnly ? 'labeled' : 'all'}
-          onChange={(e) => setLabeledOnly(e.target.value === 'labeled')}
-          aria-label="Show labeled or all meetings"
-        >
-          <option value="labeled">Labeled</option>
-          <option value="all">All meetings</option>
-        </select>
-        <select value={seller} onChange={(e) => setSeller(e.target.value)} aria-label="Filter by seller">
-          <option value="">All sellers</option>
-          {filters?.sellers.map((s) => <option key={s} value={s}>{s}</option>)}
-        </select>
-        <select value={closed} onChange={(e) => setClosed(e.target.value)} aria-label="Filter by outcome">
-          <option value="">All outcomes</option>
-          <option value="1">Closed won</option>
-          <option value="0">Open</option>
-        </select>
-        <select value={primaryJob} onChange={(e) => setPrimaryJob(e.target.value)} aria-label="Filter by primary job">
-          <option value="">All jobs</option>
-          {filters?.primary_jobs.map((j) => <option key={j} value={j}>{j}</option>)}
-        </select>
-        <select value={handoff} onChange={(e) => setHandoff(e.target.value)} aria-label="Filter by handoff">
-          <option value="">All handoff</option>
-          {filters?.handoff_topologies.map((h) => <option key={h} value={h}>{h}</option>)}
-        </select>
-        <select value={trust} onChange={(e) => setTrust(e.target.value)} aria-label="Filter by trust surface">
-          <option value="">All trust</option>
-          {filters?.trust_surfaces.map((t) => <option key={t} value={t}>{t}</option>)}
-        </select>
-        <select value={trigger} onChange={(e) => setTrigger(e.target.value)} aria-label="Filter by buying trigger">
-          <option value="">All triggers</option>
-          {filters?.buying_triggers.map((t) => <option key={t} value={t}>{t}</option>)}
-        </select>
-        <input
-          placeholder="Search name or transcript…"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          aria-label="Search meetings"
-        />
+        <FilterField label="Coverage">
+          <select
+            value={labeledOnly ? 'labeled' : 'all'}
+            onChange={(e) => setLabeledOnly(e.target.value === 'labeled')}
+          >
+            <option value="labeled">Labeled</option>
+            <option value="all">All meetings</option>
+          </select>
+        </FilterField>
+        <FilterField label="Seller">
+          <select value={seller} onChange={(e) => setSeller(e.target.value)}>
+            <option value="">All</option>
+            {filters?.sellers.map((s) => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </FilterField>
+        <FilterField label="Outcome">
+          <select value={closed} onChange={(e) => setClosed(e.target.value)}>
+            <option value="">All</option>
+            <option value="1">Closed won</option>
+            <option value="0">Open</option>
+          </select>
+        </FilterField>
+        <FilterField label="Primary job">
+          <select value={primaryJob} onChange={(e) => setPrimaryJob(e.target.value)}>
+            <option value="">All</option>
+            {filters?.primary_jobs.map((j) => <option key={j} value={j}>{j.replace(/_/g, ' ')}</option>)}
+          </select>
+        </FilterField>
+        <FilterField label="Handoff">
+          <select value={handoff} onChange={(e) => setHandoff(e.target.value)}>
+            <option value="">All</option>
+            {filters?.handoff_topologies.map((h) => <option key={h} value={h}>{h.replace(/_/g, ' ')}</option>)}
+          </select>
+        </FilterField>
+        <FilterField label="Trust">
+          <select value={trust} onChange={(e) => setTrust(e.target.value)}>
+            <option value="">All</option>
+            {filters?.trust_surfaces.map((t) => <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>)}
+          </select>
+        </FilterField>
+        <FilterField label="Trigger">
+          <select value={trigger} onChange={(e) => setTrigger(e.target.value)}>
+            <option value="">All</option>
+            {filters?.buying_triggers.map((t) => <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>)}
+          </select>
+        </FilterField>
+        <FilterField label="Search">
+          <input
+            placeholder="Name or transcript…"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+          />
+        </FilterField>
       </section>
 
       <p className="section-heading">Performance metrics</p>
@@ -362,10 +457,10 @@ export default function App() {
             glyph={c.glyph}
           />
         ))}
-        {metrics?.job_handoff_heatmap.handoffs.length ? (
-          <Heatmap data={metrics.job_handoff_heatmap} />
-        ) : null}
       </section>
+      {metrics?.job_handoff_heatmap.handoffs.length ? (
+        <Heatmap data={metrics.job_handoff_heatmap} />
+      ) : null}
 
       <section className="table-section">
         <div className="table-section__header">
@@ -377,7 +472,9 @@ export default function App() {
         <div className="table-wrap">
           {meetings.length === 0 ? (
             <div className="empty-state">
-              <div className="empty-state__icon" aria-hidden>∅</div>
+              <div className="empty-state__icon" aria-hidden>
+                <ChartGlyph name="bars" />
+              </div>
               <p>No meetings match your filters.</p>
             </div>
           ) : (
@@ -404,8 +501,8 @@ export default function App() {
                         {m.closed ? 'Won' : 'Open'}
                       </span>
                     </td>
-                    <td>{m.primary_job ?? '—'}</td>
-                    <td>{m.handoff_topology ?? '—'}</td>
+                    <td>{m.primary_job ? prettyLabel(m.primary_job) : '—'}</td>
+                    <td>{m.handoff_topology ? prettyLabel(m.handoff_topology) : '—'}</td>
                     <td>
                       {m.model ? (
                         <span className="model-cell">
@@ -427,6 +524,7 @@ export default function App() {
       </section>
         </>
       )}
+      </main>
     </div>
   )
 }

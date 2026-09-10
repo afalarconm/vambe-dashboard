@@ -1,3 +1,21 @@
+/* ── Skip link ── */
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0.75rem;
+  z-index: 100;
+  padding: 0.5rem 0.875rem;
+  background: var(--color-primary);
+  color: var(--color-primary-text);
+  border-radius: var(--radius-lg);
+  font-weight: 600;
+  font-size: 0.8125rem;
+}
+
+.skip-link:focus {
+  left: 0.75rem;
+}
+
 /* ── App shell ── */
 .app {
   max-width: 1280px;
@@ -96,7 +114,8 @@
 }
 
 .tabs__btn {
-  padding: 0.5rem 1.125rem;
+  padding: 0.625rem 1.125rem;
+  min-height: 2.75rem;
   border: none;
   border-radius: var(--radius-lg);
   font-family: var(--font-sans);
@@ -135,16 +154,17 @@
 }
 
 .dimensions__grid {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
   gap: 1rem;
+  align-items: start;
 }
 
 .dimension-card {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-2xl);
-  padding: 1.25rem 1.375rem;
+  padding: 1.125rem 1.25rem;
   box-shadow: var(--shadow-card);
 }
 
@@ -153,15 +173,14 @@
   font-weight: 600;
   color: var(--color-text);
   letter-spacing: -0.01em;
-  margin-bottom: 0.375rem;
+  margin-bottom: 0.25rem;
 }
 
 .dimension-card__why {
   font-size: 0.8125rem;
   color: var(--color-text-muted);
-  line-height: 1.5;
-  margin-bottom: 1rem;
-  max-width: 48rem;
+  line-height: 1.45;
+  margin-bottom: 0.75rem;
 }
 
 .dimension-card__enums {
@@ -170,15 +189,14 @@
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.375rem;
 }
 
 .enum-row {
   display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 0.5rem 0.75rem;
-  padding: 0.5rem 0.75rem;
+  flex-direction: column;
+  gap: 0.125rem;
+  padding: 0.5rem 0.625rem;
   background: var(--color-bg-subtle);
   border-radius: var(--radius-lg);
 }
@@ -187,19 +205,19 @@
   font-size: 0.8125rem;
   font-weight: 600;
   color: var(--color-text);
-  white-space: nowrap;
 }
 
 .enum-row__gloss {
-  font-size: 0.8125rem;
+  font-size: 0.75rem;
   color: var(--color-text-muted);
+  line-height: 1.4;
 }
 
 /* ── Filters ── */
 .filters {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.625rem;
+  gap: 0.75rem 1rem;
   margin-bottom: 1.75rem;
   padding: 1rem 1.125rem;
   background: var(--color-surface);
@@ -208,9 +226,25 @@
   box-shadow: var(--shadow-card);
 }
 
+.filter-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 8.5rem;
+}
+
+.filter-field__label {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
 .filters select,
 .filters input {
   padding: 0.5rem 0.75rem;
+  min-height: 2.75rem;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   font-family: var(--font-sans);
@@ -220,6 +254,18 @@
   color: var(--color-text);
   transition: border-color 0.15s, box-shadow 0.15s;
   outline: none;
+  cursor: pointer;
+}
+
+.filters input {
+  cursor: text;
+  flex: 1;
+  min-width: 14rem;
+}
+
+.filter-field:last-child {
+  flex: 1;
+  min-width: 14rem;
 }
 
 .filters select:hover,
@@ -231,11 +277,6 @@
 .filters input:focus {
   border-color: var(--color-primary);
   box-shadow: 0 0 0 3px rgba(67, 122, 239, 0.15);
-}
-
-.filters input {
-  flex: 1;
-  min-width: 220px;
 }
 
 .filters input::placeholder {
@@ -256,9 +297,16 @@
 /* ── Charts ── */
 .charts {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 1rem;
-  margin-bottom: 1.75rem;
+  align-items: start;
+  margin-bottom: 1rem;
+}
+
+@media (min-width: 1100px) {
+  .charts {
+    grid-template-columns: repeat(3, 1fr);
+  }
 }
 
 .chart {
@@ -267,11 +315,15 @@
   border-radius: var(--radius-2xl);
   padding: 1.125rem 1.25rem 0.75rem;
   box-shadow: var(--shadow-card);
-  transition: box-shadow 0.2s;
+  margin: 0;
+  min-width: 0;
 }
 
-.chart:hover {
-  box-shadow: var(--shadow-md);
+.chart__empty {
+  margin: 0;
+  padding: 1.5rem 0.25rem 1rem;
+  font-size: 0.8125rem;
+  color: var(--color-text-muted);
 }
 
 .chart__header {
@@ -349,7 +401,7 @@
 }
 
 .chart--heatmap {
-  grid-column: span 1;
+  margin-bottom: 1.75rem;
 }
 
 .heatmap-wrap {
@@ -359,13 +411,13 @@
 
 .heatmap {
   display: grid;
-  gap: 3px;
+  gap: 4px;
   min-width: 100%;
   font-size: 0.6875rem;
 }
 
 .heatmap__corner {
-  min-height: 2rem;
+  min-height: 2.5rem;
 }
 
 .heatmap__col-label,
@@ -374,25 +426,17 @@
   align-items: center;
   font-weight: 600;
   color: var(--color-text-muted);
-  line-height: 1.2;
+  line-height: 1.25;
 }
 
 .heatmap__col-label {
   justify-content: center;
   text-align: center;
-  padding: 0.25rem 0.125rem;
-  writing-mode: vertical-rl;
-  transform: rotate(180deg);
-  max-height: 5.5rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  padding: 0 0.35rem 0.5rem;
 }
 
 .heatmap__row-label {
-  padding-right: 0.375rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  padding-right: 0.5rem;
 }
 
 .heatmap__cell {
@@ -400,7 +444,7 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  min-height: 2.75rem;
+  min-height: 3.25rem;
   border-radius: var(--radius-md);
   border: 1px solid var(--color-border);
   color: var(--color-vambe-blue-900);
@@ -416,19 +460,40 @@
 }
 
 .heatmap__rate {
-  font-size: 0.75rem;
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
 }
 
 .heatmap__n {
   font-size: 0.625rem;
   font-weight: 500;
   opacity: 0.85;
+  font-variant-numeric: tabular-nums;
 }
 
 .heatmap__legend {
-  margin-top: 0.625rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
   font-size: 0.6875rem;
   color: var(--color-text-muted);
+}
+
+.heatmap__scale {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.heatmap__scale-bar {
+  display: block;
+  width: 7.5rem;
+  height: 0.5rem;
+  border-radius: var(--radius-full);
+  background: linear-gradient(90deg, rgb(242, 246, 254), rgb(62, 156, 234));
 }
 
 @media (prefers-color-scheme: dark) {
@@ -616,12 +681,6 @@ td:first-child {
 }
 
 /* ── Responsive ── */
-@media (max-width: 1100px) {
-  .charts {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
-
 @media (max-width: 640px) {
   .app {
     padding: 1.25rem 1rem 2rem;
@@ -633,5 +692,18 @@ td:first-child {
 
   .filters {
     padding: 0.875rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tabs__btn,
+  tbody tr,
+  .filters select,
+  .filters input {
+    transition: none;
+  }
+
+  .loading__spinner {
+    animation: none;
   }
 }
