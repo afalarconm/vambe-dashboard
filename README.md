@@ -1,42 +1,41 @@
 # Vambe Take-Home
 
-Sales meeting explorer: ingest CSV → categorize transcripts → FastAPI + React dashboard.
+Sales meeting explorer: ingest CSV → load labels → FastAPI + React dashboard.
 
 ## Setup
 
 ```bash
-# ingest CSV into SQLite
-python scripts/ingest.py
+python scripts/ingest.py && python scripts/load_labels.py   # demo: 95 Gemma labels, no API key
+```
 
-# categorize ~100 stratified meetings (heuristic, no API key needed)
-python scripts/categorize.py
+Optional paths:
 
-# optional: LLM categorization via OpenRouter
-export OPENROUTER_API_KEY=sk-...
-python scripts/categorize.py --llm
-# override model: OPENROUTER_MODEL=google/gemma-3-27b-it
+```bash
+python scripts/categorize.py              # heuristic-v1 (~100 stratified)
+export OPENROUTER_API_KEY=...             # never commit
+python scripts/categorize.py --llm        # live LLM via OpenRouter
 ```
 
 ## Run
 
 ```bash
-# API (port 8000)
 pip install -r apps/api/requirements.txt
 uvicorn apps.api.main:app --reload --app-dir .
 
-# Web (port 5173, proxies /api → 8000)
-cd apps/web && npm install && npm run dev
+cd apps/web && npm install && npm run dev   # http://localhost:5173
 ```
 
-Open http://localhost:5173
+## API
 
-## Decisions
-
-- **Stable IDs**: SHA-256 hash of email|phone|date — re-ingest is idempotent.
-- **Categorization**: Default Spanish keyword heuristics (`heuristic-v1`); optional OpenRouter LLM (`llm-v1`) with enum validation and one retry. Stratified sample: ~50 closed + ~50 open.
-- **API**: SQLite, no ORM. Filters join meetings ↔ categories. CORS for Vite dev.
-- **Frontend**: Single-page filters + table + Recharts win-rate bar chart. No state library.
+| Endpoint | Description |
+|----------|-------------|
+| `GET /meetings` | Paginated meetings + labels (filters: seller, closed, dims, q) |
+| `GET /filters` | Distinct filter values |
+| `GET /metrics/win-rate-by-job` | Win rate by `primary_job` |
+| `GET /metrics/win-rate-by-handoff` | Win rate by `handoff_topology` |
+| `GET /metrics/win-rate-by-trigger` | Win rate by `buying_trigger` |
+| `GET /metrics/system-gravity-mix` | Count + share by `system_gravity` |
 
 ## Data
 
-CSV fetched from ClickUp attachment (~10k rows, UTF-8 BOM). Columns: Nombre, Correo Electronico, Numero de Telefono, Fecha de la Reunion, Vendedor asignado, closed, Transcripcion.
+CSV: `data/vambe_clients_10k.csv` (~10k rows). Pre-exported LLM labels: `data/labels_llm_v1.json` (95 rows, `google/gemma-3-27b-it` / `llm-v1`).

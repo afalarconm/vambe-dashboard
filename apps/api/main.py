@@ -21,6 +21,21 @@ def db():
     return conn
 
 
+def win_rate(conn, group_col: str, alias: str):
+    rows = conn.execute(f"""
+        SELECT c.{group_col} AS {alias},
+               SUM(m.closed) AS wins,
+               COUNT(*) AS total,
+               ROUND(100.0 * SUM(m.closed) / COUNT(*), 1) AS win_rate
+        FROM meetings m
+        JOIN categories c ON c.meeting_id = m.id
+        WHERE c.{group_col} IS NOT NULL
+        GROUP BY c.{group_col}
+        ORDER BY win_rate DESC
+    """).fetchall()
+    return [dict(r) for r in rows]
+
+
 @app.get("/meetings")
 def meetings(
     seller: str | None = None,
@@ -81,16 +96,38 @@ def meetings(
 @app.get("/metrics/win-rate-by-job")
 def win_rate_by_job():
     conn = db()
+    result = win_rate(conn, "primary_job", "job")
+    conn.close()
+    return result
+
+
+@app.get("/metrics/win-rate-by-handoff")
+def win_rate_by_handoff():
+    conn = db()
+    result = win_rate(conn, "handoff_topology", "handoff")
+    conn.close()
+    return result
+
+
+@app.get("/metrics/win-rate-by-trigger")
+def win_rate_by_trigger():
+    conn = db()
+    result = win_rate(conn, "buying_trigger", "trigger")
+    conn.close()
+    return result
+
+
+@app.get("/metrics/system-gravity-mix")
+def system_gravity_mix():
+    conn = db()
     rows = conn.execute("""
-        SELECT c.primary_job AS job,
-               SUM(m.closed) AS wins,
-               COUNT(*) AS total,
-               ROUND(100.0 * SUM(m.closed) / COUNT(*), 1) AS win_rate
-        FROM meetings m
-        JOIN categories c ON c.meeting_id = m.id
-        WHERE c.primary_job IS NOT NULL
-        GROUP BY c.primary_job
-        ORDER BY win_rate DESC
+        SELECT c.system_gravity AS gravity,
+               COUNT(*) AS count,
+               ROUND(100.0 * COUNT(*) / (SELECT COUNT(*) FROM categories), 1) AS share
+        FROM categories c
+        WHERE c.system_gravity IS NOT NULL
+        GROUP BY c.system_gravity
+        ORDER BY count DESC
     """).fetchall()
     conn.close()
     return [dict(r) for r in rows]

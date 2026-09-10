@@ -22,17 +22,48 @@ type Meeting = {
   handoff_topology: string | null
   trust_surface: string | null
   buying_trigger: string | null
+  model: string | null
+  prompt_version: string | null
 }
 
-type WinRate = { job: string; wins: number; total: number; win_rate: number }
+type WinRate = { wins: number; total: number; win_rate: number }
+type WinRateJob = WinRate & { job: string }
+type WinRateHandoff = WinRate & { handoff: string }
+type WinRateTrigger = WinRate & { trigger: string }
+type GravityMix = { gravity: string; count: number; share: number }
 
 const API = '/api'
+
+function Chart({ title, data, xKey, fill }: {
+  title: string
+  data: Record<string, unknown>[]
+  xKey: string
+  fill: string
+}) {
+  return (
+    <div className="chart">
+      <h2>{title}</h2>
+      <ResponsiveContainer width="100%" height={240}>
+        <BarChart data={data} margin={{ bottom: 50 }}>
+          <CartesianGrid strokeDasharray="3 3" />
+          <XAxis dataKey={xKey} angle={-30} textAnchor="end" interval={0} tick={{ fontSize: 10 }} />
+          <YAxis unit={xKey === 'gravity' ? '' : '%'} domain={xKey === 'gravity' ? undefined : [0, 100]} />
+          <Tooltip formatter={(v) => [xKey === 'gravity' ? v : `${v ?? 0}%`, xKey === 'gravity' ? 'Count' : 'Win rate']} />
+          <Bar dataKey={xKey === 'gravity' ? 'count' : 'win_rate'} fill={fill} radius={[4, 4, 0, 0]} />
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  )
+}
 
 export default function App() {
   const [filters, setFilters] = useState<Filters | null>(null)
   const [meetings, setMeetings] = useState<Meeting[]>([])
   const [total, setTotal] = useState(0)
-  const [winRates, setWinRates] = useState<WinRate[]>([])
+  const [byJob, setByJob] = useState<WinRateJob[]>([])
+  const [byHandoff, setByHandoff] = useState<WinRateHandoff[]>([])
+  const [byTrigger, setByTrigger] = useState<WinRateTrigger[]>([])
+  const [gravityMix, setGravityMix] = useState<GravityMix[]>([])
   const [seller, setSeller] = useState('')
   const [closed, setClosed] = useState('')
   const [primaryJob, setPrimaryJob] = useState('')
@@ -55,7 +86,10 @@ export default function App() {
 
   useEffect(() => {
     fetch(`${API}/filters`).then((r) => r.json()).then(setFilters)
-    fetch(`${API}/metrics/win-rate-by-job`).then((r) => r.json()).then(setWinRates)
+    fetch(`${API}/metrics/win-rate-by-job`).then((r) => r.json()).then(setByJob)
+    fetch(`${API}/metrics/win-rate-by-handoff`).then((r) => r.json()).then(setByHandoff)
+    fetch(`${API}/metrics/win-rate-by-trigger`).then((r) => r.json()).then(setByTrigger)
+    fetch(`${API}/metrics/system-gravity-mix`).then((r) => r.json()).then(setGravityMix)
   }, [])
 
   useEffect(() => {
@@ -64,11 +98,13 @@ export default function App() {
       .then((d) => { setMeetings(d.items); setTotal(d.total) })
   }, [params])
 
+  const labeled = meetings.filter((m) => m.prompt_version).length
+
   return (
     <div className="app">
       <header>
         <h1>Vambe Dashboard</h1>
-        <span>{total.toLocaleString()} meetings</span>
+        <span>{total.toLocaleString()} meetings · {labeled} labeled in view</span>
       </header>
 
       <section className="filters">
@@ -100,17 +136,11 @@ export default function App() {
         <input placeholder="Search name or transcript…" value={q} onChange={(e) => setQ(e.target.value)} />
       </section>
 
-      <section className="chart">
-        <h2>Win rate by primary job</h2>
-        <ResponsiveContainer width="100%" height={280}>
-          <BarChart data={winRates} margin={{ bottom: 60 }}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="job" angle={-35} textAnchor="end" interval={0} tick={{ fontSize: 11 }} />
-            <YAxis unit="%" domain={[0, 100]} />
-            <Tooltip formatter={(v) => [`${v ?? 0}%`, 'Win rate']} />
-            <Bar dataKey="win_rate" fill="#4f46e5" radius={[4, 4, 0, 0]} />
-          </BarChart>
-        </ResponsiveContainer>
+      <section className="charts">
+        <Chart title="Win rate by primary job" data={byJob} xKey="job" fill="#4f46e5" />
+        <Chart title="Win rate by handoff topology" data={byHandoff} xKey="handoff" fill="#0891b2" />
+        <Chart title="Win rate by buying trigger" data={byTrigger} xKey="trigger" fill="#059669" />
+        <Chart title="System gravity mix" data={gravityMix} xKey="gravity" fill="#d97706" />
       </section>
 
       <section className="table-wrap">
@@ -123,8 +153,7 @@ export default function App() {
               <th>Closed</th>
               <th>Primary job</th>
               <th>Handoff</th>
-              <th>Trust</th>
-              <th>Trigger</th>
+              <th>Model</th>
             </tr>
           </thead>
           <tbody>
@@ -136,8 +165,7 @@ export default function App() {
                 <td className={m.closed ? 'won' : 'open'}>{m.closed ? '✓' : '—'}</td>
                 <td>{m.primary_job ?? '—'}</td>
                 <td>{m.handoff_topology ?? '—'}</td>
-                <td>{m.trust_surface ?? '—'}</td>
-                <td>{m.buying_trigger ?? '—'}</td>
+                <td title={m.model ?? undefined}>{m.prompt_version ?? '—'}</td>
               </tr>
             ))}
           </tbody>

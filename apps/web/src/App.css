@@ -40,12 +40,18 @@ header span { color: #64748b; font-size: 0.875rem; }
 
 .filters input { flex: 1; min-width: 200px; }
 
+.charts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
 .chart {
   background: #fff;
   border: 1px solid #e2e8f0;
   border-radius: 8px;
   padding: 1rem;
-  margin-bottom: 1.5rem;
 }
 
 .chart h2 {
