@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { Fragment, useCallback, useEffect, useState } from 'react'
 import {
   Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts'
@@ -30,7 +30,15 @@ type WinRate = { wins: number; total: number; win_rate: number }
 type WinRateJob = WinRate & { job: string }
 type WinRateHandoff = WinRate & { handoff: string }
 type WinRateTrigger = WinRate & { trigger: string }
+type WinRateVolumeBand = WinRate & { volume_band: string }
 type GravityMix = { gravity: string; count: number; share: number }
+type HeatmapCell = WinRate & { job: string; handoff: string }
+type JobHandoffHeatmap = {
+  jobs: string[]
+  handoffs: string[]
+  cells: HeatmapCell[]
+  min_sample: number
+}
 
 const API = import.meta.env.DEV ? '/api' : ''
 
@@ -39,13 +47,15 @@ const CHART_COLORS = {
   handoff: 'var(--color-chart-2)',
   trigger: 'var(--color-chart-3)',
   gravity: 'var(--color-chart-4)',
+  volume: 'var(--color-chart-5)',
 } as const
 
-const CHARTS = [
+const BAR_CHARTS = [
   { title: 'Win rate by primary job', dataKey: 'byJob' as const, xKey: 'job' as const, color: CHART_COLORS.job, icon: 'chart__icon--blue', glyph: '▮' },
   { title: 'Win rate by handoff topology', dataKey: 'byHandoff' as const, xKey: 'handoff' as const, color: CHART_COLORS.handoff, icon: 'chart__icon--sky', glyph: '⇄' },
   { title: 'Win rate by buying trigger', dataKey: 'byTrigger' as const, xKey: 'trigger' as const, color: CHART_COLORS.trigger, icon: 'chart__icon--orange', glyph: '⚡' },
   { title: 'System gravity mix', dataKey: 'gravityMix' as const, xKey: 'gravity' as const, color: CHART_COLORS.gravity, icon: 'chart__icon--purple', glyph: '◎' },
+  { title: 'Win rate by volume band', dataKey: 'byVolumeBand' as const, xKey: 'volume_band' as const, color: CHART_COLORS.volume, icon: 'chart__icon--teal', glyph: '▤' },
 ] as const
 
 function Chart({ title, data, xKey, fill, iconClass, glyph }: {
@@ -106,6 +116,67 @@ function Chart({ title, data, xKey, fill, iconClass, glyph }: {
   )
 }
 
+function heatColor(winRate: number): string {
+  const t = Math.max(0, Math.min(100, winRate)) / 100
+  const r = Math.round(242 - t * 180)
+  const g = Math.round(246 - t * 90)
+  const b = Math.round(254 - t * 20)
+  return `rgb(${r}, ${g}, ${b})`
+}
+
+function Heatmap({ data }: { data: JobHandoffHeatmap }) {
+  const lookup = new Map(
+    data.cells.map((c) => [`${c.job}|${c.handoff}`, c]),
+  )
+
+  return (
+    <div className="chart chart--heatmap">
+      <div className="chart__header">
+        <span className="chart__icon chart__icon--green" aria-hidden>▦</span>
+        <h2>Win rate: job × handoff</h2>
+      </div>
+      <div className="heatmap-wrap">
+        <div
+          className="heatmap"
+          style={{ gridTemplateColumns: `minmax(7rem, 1.2fr) repeat(${data.handoffs.length}, 1fr)` }}
+        >
+          <div className="heatmap__corner" />
+          {data.handoffs.map((h) => (
+            <div key={h} className="heatmap__col-label" title={h}>{h.replace(/_/g, ' ')}</div>
+          ))}
+          {data.jobs.map((job) => (
+            <Fragment key={job}>
+              <div className="heatmap__row-label" title={job}>{job.replace(/_/g, ' ')}</div>
+              {data.handoffs.map((handoff) => {
+                const cell = lookup.get(`${job}|${handoff}`)
+                const thin = !cell || cell.total < data.min_sample
+                return (
+                  <div
+                    key={`${job}|${handoff}`}
+                    className={`heatmap__cell${thin ? ' heatmap__cell--thin' : ''}`}
+                    style={thin ? undefined : { background: heatColor(cell!.win_rate) }}
+                    title={cell ? `${job} × ${handoff}: ${cell.win_rate}% (${cell.wins}/${cell.total})` : 'No data'}
+                  >
+                    {cell ? (
+                      thin ? <span className="heatmap__n">n={cell.total}</span> : (
+                        <>
+                          <span className="heatmap__rate">{cell.win_rate}%</span>
+                          <span className="heatmap__n">n={cell.total}</span>
+                        </>
+                      )
+                    ) : '—'}
+                  </div>
+                )
+              })}
+            </Fragment>
+          ))}
+        </div>
+      </div>
+      <p className="heatmap__legend">Cells with n &lt; {data.min_sample} are greyed out.</p>
+    </div>
+  )
+}
+
 export default function App() {
   const [filters, setFilters] = useState<Filters | null>(null)
   const [meetings, setMeetings] = useState<Meeting[]>([])
@@ -113,7 +184,9 @@ export default function App() {
   const [byJob, setByJob] = useState<WinRateJob[]>([])
   const [byHandoff, setByHandoff] = useState<WinRateHandoff[]>([])
   const [byTrigger, setByTrigger] = useState<WinRateTrigger[]>([])
+  const [byVolumeBand, setByVolumeBand] = useState<WinRateVolumeBand[]>([])
   const [gravityMix, setGravityMix] = useState<GravityMix[]>([])
+  const [jobHandoffHeatmap, setJobHandoffHeatmap] = useState<JobHandoffHeatmap | null>(null)
   const [loading, setLoading] = useState(true)
   const [seller, setSeller] = useState('')
   const [closed, setClosed] = useState('')
@@ -141,7 +214,9 @@ export default function App() {
       fetch(`${API}/metrics/win-rate-by-job`).then((r) => r.json()).then(setByJob),
       fetch(`${API}/metrics/win-rate-by-handoff`).then((r) => r.json()).then(setByHandoff),
       fetch(`${API}/metrics/win-rate-by-trigger`).then((r) => r.json()).then(setByTrigger),
+      fetch(`${API}/metrics/win-rate-by-volume-band`).then((r) => r.json()).then(setByVolumeBand),
       fetch(`${API}/metrics/system-gravity-mix`).then((r) => r.json()).then(setGravityMix),
+      fetch(`${API}/metrics/job-handoff-heatmap`).then((r) => r.json()).then(setJobHandoffHeatmap),
     ]).finally(() => setLoading(false))
   }, [])
 
@@ -152,7 +227,7 @@ export default function App() {
   }, [params])
 
   const labeled = meetings.filter((m) => m.prompt_version).length
-  const chartData = { byJob, byHandoff, byTrigger, gravityMix }
+  const chartData = { byJob, byHandoff, byTrigger, byVolumeBand, gravityMix }
 
   if (loading) {
     return (
@@ -217,7 +292,7 @@ export default function App() {
 
       <p className="section-heading">Performance metrics</p>
       <section className="charts">
-        {CHARTS.map((c) => (
+        {BAR_CHARTS.map((c) => (
           <Chart
             key={c.xKey}
             title={c.title}
@@ -228,6 +303,7 @@ export default function App() {
             glyph={c.glyph}
           />
         ))}
+        {jobHandoffHeatmap && <Heatmap data={jobHandoffHeatmap} />}
       </section>
 
       <section className="table-section">

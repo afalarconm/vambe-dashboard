@@ -66,6 +66,7 @@
   --color-chart-2: var(--color-vambe-blue-400);
   --color-chart-3: var(--color-vambe-orange-500);
   --color-chart-4: var(--color-vambe-purple-800);
+  --color-chart-5: var(--color-vambe-blue-600);
 
   /* Radii */
   --radius-sm: 0.375rem;
