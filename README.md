@@ -8,11 +8,16 @@ Sales-meeting explorer over 10k Spanish transcripts: filter meetings, compare wi
 
 ![Label, bake, serve](docs/how-it-works.png)
 
-**Label → Bake → Serve.** Gemma classifies transcripts offline into a locked taxonomy. Build (local or Vercel) bakes the CSV and those labels into SQLite. FastAPI serves that file read-only — no LLM, no database server, no runtime env vars.
+Meetings never go to Gemma directly. They land in SQLite first; the labeler reads a sample of those transcripts.
+
+1. **Bake** loads the CSV into `meetings`.
+2. **Label** (optional, offline) samples those rows, sends each transcript to OpenRouter, and writes `data/labels_llm_v1.json`.
+3. **Bake** loads that JSON into `categories`.
+4. **Serve** is read-only — no LLM, no database server, no runtime env vars.
 
 | Step | Where | What |
 |------|--------|------|
-| **Label** | `scripts/labeling/` | OpenRouter → `data/labels_llm_v1.json` |
+| **Label** | `scripts/labeling/` | SQLite transcripts → OpenRouter → `labels_llm_v1.json` |
 | **Bake** | `scripts/bake_db.py` | CSV + JSON → `data/meetings.db` |
 | **Serve** | `apps/api/` + `apps/web/` | Read-only API + React dashboard |
 
@@ -47,7 +52,7 @@ cd apps/web && npm run dev
 
 ## Relabel (optional)
 
-Needs `OPENROUTER_API_KEY`. Bake again afterwards.
+Needs a baked DB and `OPENROUTER_API_KEY`. The labeler reads transcripts already in SQLite, then bake again to reload the JSON.
 
 ```bash
 python -m scripts.labeling.label_meetings --limit 100 --export
