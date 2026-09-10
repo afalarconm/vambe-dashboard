@@ -137,6 +137,23 @@ def job_handoff_heatmap(conn, clauses: list[str], params: list):
     return {"jobs": jobs, "handoffs": handoffs, "cells": cells, "min_sample": 5}
 
 
+def labeled_summary(conn, clauses: list[str], params: list):
+    where = where_sql(clauses)
+    row = conn.execute(f"""
+        SELECT COUNT(*) AS labeled, COALESCE(SUM(m.closed), 0) AS wins
+        FROM meetings m
+        JOIN categories c ON c.meeting_id = m.id
+        {where}
+    """, params).fetchone()
+    labeled = row["labeled"]
+    wins = row["wins"]
+    return {
+        "labeled": labeled,
+        "wins": wins,
+        "win_rate": round(100.0 * wins / labeled, 1) if labeled else 0,
+    }
+
+
 def collect_metrics(conn, clauses: list[str], params: list) -> dict:
     series = {
         f"by_{alias}": win_rate(conn, col, alias, clauses, params)
@@ -146,6 +163,7 @@ def collect_metrics(conn, clauses: list[str], params: list) -> dict:
         **series,
         "gravity_mix": gravity_mix(conn, clauses, params),
         "job_handoff_heatmap": job_handoff_heatmap(conn, clauses, params),
+        "summary": labeled_summary(conn, clauses, params),
     }
 
 

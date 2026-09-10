@@ -53,6 +53,14 @@ class FilteredMetricsTest(unittest.TestCase):
         gravities = {row["gravity"] for row in mix["gravity_mix"]}
         self.assertEqual(gravities, {"standalone_ok"})
 
+    def test_summary_win_rate(self):
+        conn = seed()
+        summary = collect_metrics(conn, *meeting_clauses())["summary"]
+        conn.close()
+        self.assertEqual(summary["labeled"], 4)
+        self.assertEqual(summary["wins"], 2)
+        self.assertEqual(summary["win_rate"], 50.0)
+
 
 if __name__ == "__main__":
     unittest.main()

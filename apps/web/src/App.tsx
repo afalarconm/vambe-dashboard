@@ -69,6 +69,7 @@ type Metrics = {
   by_volume_band: WinRateVolumeBand[]
   gravity_mix: GravityMix[]
   job_handoff_heatmap: JobHandoffHeatmap
+  summary: { labeled: number; wins: number; win_rate: number }
 }
 
 const BAR_CHARTS = [
@@ -531,6 +532,22 @@ export default function App() {
       </section>
 
       <p className="section-heading">Performance metrics</p>
+      {metrics?.summary && (
+        <section className="kpis" aria-label="Filtered totals">
+          <div className="kpi">
+            <span className="kpi__value">{metrics.summary.win_rate}%</span>
+            <span className="kpi__label">Win rate</span>
+          </div>
+          <div className="kpi">
+            <span className="kpi__value">{metrics.summary.labeled.toLocaleString()}</span>
+            <span className="kpi__label">Labeled in view</span>
+          </div>
+          <div className="kpi">
+            <span className="kpi__value">{metrics.summary.wins.toLocaleString()}</span>
+            <span className="kpi__label">Closed won</span>
+          </div>
+        </section>
+      )}
       <p className="chart-hint">Click a bar or heatmap cell to filter. Click again to clear.</p>
       {chips.length > 0 && (
         <div className="chips" aria-label="Active chart filters">
