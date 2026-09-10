@@ -1,0 +1,10 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "installCommand": "pip install -r requirements.txt && cd apps/web && npm ci",
+  "functions": {
+    "main.py": {
+      "includeFiles": "data/meetings.db",
+      "maxDuration": 30
+    }
+  }
+}

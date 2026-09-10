@@ -2,55 +2,42 @@
 
 Sales meeting explorer: ingest CSV → load labels → FastAPI + React dashboard.
 
-## Live demo
+## Vercel deploy
 
-**https://journal-abraham-buys-armed.trycloudflare.com**
+1. Import **afalarconm/vambe-dashboard** (GitHub or Git URL) in [Vercel](https://vercel.com/new)
+2. Framework preset: **Other** (auto-detects FastAPI via `main.py`)
+3. Root directory: **`.`** (repo root)
+4. Build/install commands are in `vercel.json` + `pyproject.toml` — no extra env vars needed
+5. Deploy — build runs `npm run build`, `ingest`, `load_labels`; SQLite is read-only at runtime
 
-Single-service deploy: FastAPI serves API + built Vite static files. DB baked at build time (10k meetings, 95 Gemma `llm-v1` labels). No OpenRouter at runtime.
+No OpenRouter at runtime. Demo serves 95 Gemma `llm-v1` labels from baked `data/meetings.db`.
 
-> Quick-tunnel URL — ephemeral while the host VM runs. For a permanent URL, use Deploy below.
-
-## Setup (local)
+## Local
 
 ```bash
 python scripts/ingest.py && python scripts/load_labels.py
-pip install -r apps/api/requirements.txt
+pip install -r requirements.txt
 cd apps/web && npm install && npm run build
-uvicorn apps.api.main:app --host 0.0.0.0 --port 8080 --app-dir .
+uvicorn main:app --reload --port 8080
 # → http://localhost:8080
 ```
 
-Dev with HMR: `cd apps/web && npm run dev` (proxies `/api` → port 8000).
+Dev with HMR: `cd apps/web && npm run dev` (proxies `/api` → port 8000; run API separately).
 
 Optional: `python scripts/categorize.py` (heuristic) or `python scripts/categorize.py --llm` (OpenRouter).
-
-## Deploy
-
-**Docker** (Render, Fly, Railway, etc.):
-
-```bash
-docker build -t vambe-dashboard .
-docker run -p 8080:8080 vambe-dashboard
-```
-
-**Fly.io** (persistent HTTPS):
-
-```bash
-fly auth login
-fly launch --copy-config --yes    # uses fly.toml
-fly deploy
-```
-
-**Render**: connect repo → New Web Service → Docker → uses `render.yaml`.
 
 ## API
 
 | Endpoint | Description |
 |----------|-------------|
 | `GET /health` | `{ok, llm_labels}` |
-| `GET /meetings` | Paginated meetings + labels (filters: seller, closed, dims, q) |
+| `GET /meetings` | Paginated meetings + labels |
 | `GET /filters` | Distinct filter values |
 | `GET /metrics/win-rate-by-job` | Win rate by `primary_job` |
 | `GET /metrics/win-rate-by-handoff` | Win rate by `handoff_topology` |
 | `GET /metrics/win-rate-by-trigger` | Win rate by `buying_trigger` |
-| `GET /metrics/system-gravity-mix` | Count + share by `system_gravity` |
+| `GET /metrics/system-gravity-mix` | Share by `system_gravity` |
+
+## Other deploy
+
+Docker: `docker build -t vambe-dashboard . && docker run -p 8080:8080 vambe-dashboard`

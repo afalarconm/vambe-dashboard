@@ -1,0 +1,5 @@
+[tool.vercel]
+entrypoint = "main:app"
+
+[tool.vercel.scripts]
+build = "bash scripts/vercel_build.sh"

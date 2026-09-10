@@ -1,12 +1,12 @@
+import sqlite3
 from pathlib import Path
 
-import sqlite3
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 ROOT = Path(__file__).resolve().parent.parent.parent
-DB_PATH = ROOT / "data" / "meetings.db"
+BUNDLE_DB = ROOT / "data" / "meetings.db"
 STATIC_DIR = Path(__file__).resolve().parent.parent / "web" / "dist"
 
 app = FastAPI()
@@ -19,7 +19,7 @@ app.add_middleware(
 
 
 def db():
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(f"file:{BUNDLE_DB}?mode=ro", uri=True)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -172,4 +172,7 @@ def filters():
 
 
 if STATIC_DIR.exists():
-    app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
+    if hasattr(app, "frontend"):
+        app.frontend("/", directory="apps/web/dist", fallback="index.html")
+    else:
+        app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
