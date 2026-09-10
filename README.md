@@ -24,7 +24,13 @@ uvicorn main:app --reload --port 8080
 
 Dev with HMR: `cd apps/web && npm run dev` (proxies `/api` → port 8000; run API separately).
 
-Optional: `python scripts/categorize.py` (heuristic) or `python scripts/categorize.py --llm` (OpenRouter).
+Optional — re-run LLM labeling (requires `OPENROUTER_API_KEY`):
+
+```bash
+export OPENROUTER_API_KEY=your_key
+python scripts/categorize.py --limit 100 --export
+python scripts/load_labels.py
+```
 
 ## API
 
