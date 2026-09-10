@@ -39,6 +39,8 @@ def meeting_clauses(
     handoff_topology: str | None = None,
     trust_surface: str | None = None,
     buying_trigger: str | None = None,
+    system_gravity: str | None = None,
+    volume_band: str | None = None,
     q: str | None = None,
     labeled_only: bool = False,
 ) -> tuple[list[str], list]:
@@ -63,6 +65,12 @@ def meeting_clauses(
     if buying_trigger:
         clauses.append("c.buying_trigger = ?")
         params.append(buying_trigger)
+    if system_gravity:
+        clauses.append("c.system_gravity = ?")
+        params.append(system_gravity)
+    if volume_band:
+        clauses.append("c.volume_band = ?")
+        params.append(volume_band)
     if q:
         clauses.append("(m.nombre LIKE ? OR m.transcript LIKE ?)")
         params.extend([f"%{q}%", f"%{q}%"])
@@ -160,14 +168,18 @@ def meetings(
     handoff_topology: str | None = None,
     trust_surface: str | None = None,
     buying_trigger: str | None = None,
+    system_gravity: str | None = None,
+    volume_band: str | None = None,
     q: str | None = None,
     labeled_only: bool = False,
     limit: int = Query(50, le=200),
     offset: int = 0,
 ):
     clauses, params = meeting_clauses(
-        seller, closed, primary_job, handoff_topology, trust_surface,
-        buying_trigger, q, labeled_only,
+        seller=seller, closed=closed, primary_job=primary_job,
+        handoff_topology=handoff_topology, trust_surface=trust_surface,
+        buying_trigger=buying_trigger, system_gravity=system_gravity,
+        volume_band=volume_band, q=q, labeled_only=labeled_only,
     )
     where = where_sql(clauses)
     sql = f"""
@@ -198,12 +210,16 @@ def metrics(
     handoff_topology: str | None = None,
     trust_surface: str | None = None,
     buying_trigger: str | None = None,
+    system_gravity: str | None = None,
+    volume_band: str | None = None,
     q: str | None = None,
     labeled_only: bool = False,
 ):
     clauses, params = meeting_clauses(
-        seller, closed, primary_job, handoff_topology, trust_surface,
-        buying_trigger, q, labeled_only,
+        seller=seller, closed=closed, primary_job=primary_job,
+        handoff_topology=handoff_topology, trust_surface=trust_surface,
+        buying_trigger=buying_trigger, system_gravity=system_gravity,
+        volume_band=volume_band, q=q, labeled_only=labeled_only,
     )
     conn = db()
     result = collect_metrics(conn, clauses, params)
@@ -225,6 +241,8 @@ def filters():
         "handoff_topologies": distinct("handoff_topology", "categories"),
         "trust_surfaces": distinct("trust_surface", "categories"),
         "buying_triggers": distinct("buying_trigger", "categories"),
+        "system_gravities": distinct("system_gravity", "categories"),
+        "volume_bands": distinct("volume_band", "categories"),
     }
     conn.close()
     return result

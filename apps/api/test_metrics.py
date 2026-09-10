@@ -46,6 +46,13 @@ class FilteredMetricsTest(unittest.TestCase):
         self.assertEqual(ana["scheduling_booking"], 100.0)
         self.assertNotIn("order_taking", ana)
 
+    def test_gravity_filter_narrows_mix(self):
+        conn = seed()
+        mix = collect_metrics(conn, *meeting_clauses(system_gravity="standalone_ok"))
+        conn.close()
+        gravities = {row["gravity"] for row in mix["gravity_mix"]}
+        self.assertEqual(gravities, {"standalone_ok"})
+
 
 if __name__ == "__main__":
     unittest.main()

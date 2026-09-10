@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useState, type ReactNode } from 'react'
 import {
-  Bar, BarChart, CartesianGrid, LabelList, ResponsiveContainer, Tooltip, XAxis, YAxis,
+  Bar, BarChart, CartesianGrid, Cell, LabelList, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts'
 import DimensionsPage from './DimensionsPage'
 import './App.css'
@@ -13,6 +13,8 @@ type Filters = {
   handoff_topologies: string[]
   trust_surfaces: string[]
   buying_triggers: string[]
+  system_gravities: string[]
+  volume_bands: string[]
 }
 
 type Meeting = {
@@ -126,6 +128,17 @@ function prettyLabel(value: unknown) {
   return String(value ?? '').replace(/_/g, ' ')
 }
 
+function barValue(d: unknown, xKey: string): string {
+  if (!d || typeof d !== 'object') return ''
+  const rec = d as Record<string, unknown>
+  if (xKey in rec) return String(rec[xKey] ?? '')
+  const payload = rec.payload
+  if (payload && typeof payload === 'object' && xKey in payload) {
+    return String((payload as Record<string, unknown>)[xKey] ?? '')
+  }
+  return ''
+}
+
 function FilterField({ label, children }: { label: string; children: ReactNode }) {
   return (
     <label className="filter-field">
@@ -144,13 +157,15 @@ const TOOLTIP_STYLE = {
   boxShadow: 'var(--shadow-md)',
 } as const
 
-function Chart({ title, data, xKey, fill, iconClass, glyph }: {
+function Chart({ title, data, xKey, fill, iconClass, glyph, selected, onSelect }: {
   title: string
   data: Record<string, unknown>[]
   xKey: string
   fill: string
   iconClass: string
   glyph: Glyph
+  selected: string
+  onSelect: (value: string) => void
 }) {
   const isGravity = xKey === 'gravity'
   const valueKey = isGravity ? 'count' : 'win_rate'
@@ -190,7 +205,22 @@ function Chart({ title, data, xKey, fill, iconClass, glyph }: {
               contentStyle={TOOLTIP_STYLE}
               labelStyle={{ fontWeight: 600, color: 'var(--color-text)' }}
             />
-            <Bar dataKey={valueKey} fill={fill} radius={[0, 4, 4, 0]} maxBarSize={18}>
+            <Bar
+              dataKey={valueKey}
+              fill={fill}
+              radius={[0, 4, 4, 0]}
+              maxBarSize={18}
+              cursor="pointer"
+              onClick={(d) => {
+                const value = barValue(d, xKey)
+                if (value) onSelect(value)
+              }}
+            >
+              {data.map((row) => {
+                const value = String(row[xKey] ?? '')
+                const dimmed = Boolean(selected) && selected !== value
+                return <Cell key={value} fill={fill} opacity={dimmed ? 0.35 : 1} />
+              })}
               <LabelList
                 dataKey={valueKey}
                 position="right"
@@ -213,7 +243,12 @@ function heatColor(winRate: number): string {
   return `rgb(${r}, ${g}, ${b})`
 }
 
-function Heatmap({ data }: { data: JobHandoffHeatmap }) {
+function Heatmap({ data, selectedJob, selectedHandoff, onSelect }: {
+  data: JobHandoffHeatmap
+  selectedJob: string
+  selectedHandoff: string
+  onSelect: (job: string, handoff: string) => void
+}) {
   const lookup = new Map(
     data.cells.map((c) => [`${c.job}|${c.handoff}`, c]),
   )
@@ -241,12 +276,21 @@ function Heatmap({ data }: { data: JobHandoffHeatmap }) {
               {data.handoffs.map((handoff) => {
                 const cell = lookup.get(`${job}|${handoff}`)
                 const thin = !cell || cell.total < data.min_sample
+                const active = selectedJob === job && selectedHandoff === handoff
+                const label = cell
+                  ? `${prettyLabel(job)} × ${prettyLabel(handoff)}: ${cell.win_rate}% (${cell.wins}/${cell.total})`
+                  : `${prettyLabel(job)} × ${prettyLabel(handoff)}: no data`
                 return (
-                  <div
+                  <button
                     key={`${job}|${handoff}`}
-                    className={`heatmap__cell${thin ? ' heatmap__cell--thin' : ''}`}
-                    style={thin ? undefined : { background: heatColor(cell!.win_rate) }}
-                    title={cell ? `${prettyLabel(job)} × ${prettyLabel(handoff)}: ${cell.win_rate}% (${cell.wins}/${cell.total})` : 'No data'}
+                    type="button"
+                    className={`heatmap__cell${thin ? ' heatmap__cell--thin' : ''}${active ? ' heatmap__cell--active' : ''}`}
+                    style={thin || !cell ? undefined : { background: heatColor(cell.win_rate) }}
+                    title={label}
+                    aria-pressed={active}
+                    aria-label={label}
+                    disabled={!cell}
+                    onClick={() => onSelect(job, handoff)}
                   >
                     {cell ? (
                       thin ? <span className="heatmap__n">n={cell.total}</span> : (
@@ -256,7 +300,7 @@ function Heatmap({ data }: { data: JobHandoffHeatmap }) {
                         </>
                       )
                     ) : '—'}
-                  </div>
+                  </button>
                 )
               })}
             </Fragment>
@@ -264,7 +308,7 @@ function Heatmap({ data }: { data: JobHandoffHeatmap }) {
         </div>
       </div>
       <div className="heatmap__legend">
-        <span>Cells with n &lt; {data.min_sample} are greyed out.</span>
+        <span>Click a cell to filter by job and handoff. Cells with n &lt; {data.min_sample} are greyed out.</span>
         <span className="heatmap__scale" aria-hidden>
           <span>0%</span>
           <span className="heatmap__scale-bar" />
@@ -289,6 +333,8 @@ export default function App() {
   const [handoff, setHandoff] = useState('')
   const [trust, setTrust] = useState('')
   const [trigger, setTrigger] = useState('')
+  const [gravity, setGravity] = useState('')
+  const [volumeBand, setVolumeBand] = useState('')
   const [q, setQ] = useState('')
   const [tab, setTab] = useState<Tab>('dashboard')
 
@@ -300,10 +346,12 @@ export default function App() {
     if (handoff) p.set('handoff_topology', handoff)
     if (trust) p.set('trust_surface', trust)
     if (trigger) p.set('buying_trigger', trigger)
+    if (gravity) p.set('system_gravity', gravity)
+    if (volumeBand) p.set('volume_band', volumeBand)
     if (q) p.set('q', q)
     if (labeledOnly) p.set('labeled_only', 'true')
     return p
-  }, [seller, closed, primaryJob, handoff, trust, trigger, q, labeledOnly])
+  }, [seller, closed, primaryJob, handoff, trust, trigger, gravity, volumeBand, q, labeledOnly])
 
   useEffect(() => {
     fetch(`${API}/health`).then((r) => r.json()).then(setHealth)
@@ -327,8 +375,34 @@ export default function App() {
   }, [params])
 
   const filtersActive = !labeledOnly || Boolean(
-    seller || closed !== '' || primaryJob || handoff || trust || trigger || q,
+    seller || closed !== '' || primaryJob || handoff || trust || trigger || gravity || volumeBand || q,
   )
+
+  const chartSelected: Record<string, string> = {
+    job: primaryJob,
+    handoff,
+    trigger,
+    gravity,
+    volume_band: volumeBand,
+  }
+
+  const selectChart = (xKey: string, value: string) => {
+    const toggle = (current: string, set: (v: string) => void) => set(current === value ? '' : value)
+    if (xKey === 'job') toggle(primaryJob, setPrimaryJob)
+    else if (xKey === 'handoff') toggle(handoff, setHandoff)
+    else if (xKey === 'trigger') toggle(trigger, setTrigger)
+    else if (xKey === 'gravity') toggle(gravity, setGravity)
+    else if (xKey === 'volume_band') toggle(volumeBand, setVolumeBand)
+  }
+
+  const chips = [
+    primaryJob && { key: 'job', label: 'Job', value: primaryJob, clear: () => setPrimaryJob('') },
+    handoff && { key: 'handoff', label: 'Handoff', value: handoff, clear: () => setHandoff('') },
+    trust && { key: 'trust', label: 'Trust', value: trust, clear: () => setTrust('') },
+    trigger && { key: 'trigger', label: 'Trigger', value: trigger, clear: () => setTrigger('') },
+    gravity && { key: 'gravity', label: 'Gravity', value: gravity, clear: () => setGravity('') },
+    volumeBand && { key: 'volume', label: 'Volume', value: volumeBand, clear: () => setVolumeBand('') },
+  ].filter(Boolean) as { key: string; label: string; value: string; clear: () => void }[]
 
   if (loading) {
     return (
@@ -435,6 +509,18 @@ export default function App() {
             {filters?.buying_triggers.map((t) => <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>)}
           </select>
         </FilterField>
+        <FilterField label="Gravity">
+          <select value={gravity} onChange={(e) => setGravity(e.target.value)}>
+            <option value="">All</option>
+            {filters?.system_gravities.map((g) => <option key={g} value={g}>{g.replace(/_/g, ' ')}</option>)}
+          </select>
+        </FilterField>
+        <FilterField label="Volume">
+          <select value={volumeBand} onChange={(e) => setVolumeBand(e.target.value)}>
+            <option value="">All</option>
+            {filters?.volume_bands.map((v) => <option key={v} value={v}>{v.replace(/_/g, ' ')}</option>)}
+          </select>
+        </FilterField>
         <FilterField label="Search">
           <input
             placeholder="Name or transcript…"
@@ -445,6 +531,17 @@ export default function App() {
       </section>
 
       <p className="section-heading">Performance metrics</p>
+      <p className="chart-hint">Click a bar or heatmap cell to filter. Click again to clear.</p>
+      {chips.length > 0 && (
+        <div className="chips" aria-label="Active chart filters">
+          {chips.map((chip) => (
+            <button key={chip.key} type="button" className="chip" onClick={chip.clear}>
+              {chip.label}: {prettyLabel(chip.value)}
+              <span aria-hidden>×</span>
+            </button>
+          ))}
+        </div>
+      )}
       <section className="charts">
         {BAR_CHARTS.map((c) => (
           <Chart
@@ -455,11 +552,26 @@ export default function App() {
             fill={c.color}
             iconClass={c.icon}
             glyph={c.glyph}
+            selected={chartSelected[c.xKey]}
+            onSelect={(value) => selectChart(c.xKey, value)}
           />
         ))}
       </section>
       {metrics?.job_handoff_heatmap.handoffs.length ? (
-        <Heatmap data={metrics.job_handoff_heatmap} />
+        <Heatmap
+          data={metrics.job_handoff_heatmap}
+          selectedJob={primaryJob}
+          selectedHandoff={handoff}
+          onSelect={(job, nextHandoff) => {
+            if (primaryJob === job && handoff === nextHandoff) {
+              setPrimaryJob('')
+              setHandoff('')
+            } else {
+              setPrimaryJob(job)
+              setHandoff(nextHandoff)
+            }
+          }}
+        />
       ) : null}
 
       <section className="table-section">
