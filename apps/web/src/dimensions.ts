@@ -44,8 +44,8 @@ export const DIMENSIONS: DimensionDef[] = [
       { key: 'must_integrate', label: 'Must integrate', gloss: 'Requires deep system connection' },
     ],
   },
-  {
-    key: 'trust_surface',
+    {
+      key: 'trust_surface',
     title: 'Trust surface',
     why: 'Domain sensitivity — sets compliance tone and who must approve.',
     enums: [
@@ -53,20 +53,6 @@ export const DIMENSIONS: DimensionDef[] = [
       { key: 'health_sensitive', label: 'Health sensitive', gloss: 'Medical or wellness context' },
       { key: 'regulated_advice_boundary', label: 'Regulated advice boundary', gloss: 'Legal, financial, or compliance limits' },
       { key: 'discretion_prestige', label: 'Discretion & prestige', gloss: 'High-touch, confidential, luxury' },
-    ],
-  },
-  {
-    key: 'voice_contract',
-    title: 'Voice contract',
-    why: 'Expected bot tone and brand fit — wrong voice kills a good demo.',
-    enums: [
-      { key: 'not_specified', label: 'Not specified', gloss: 'No tone preference stated' },
-      { key: 'warm_hospitable', label: 'Warm & hospitable', gloss: 'Friendly, welcoming service' },
-      { key: 'corporate_expert', label: 'Corporate expert', gloss: 'Professional, authoritative' },
-      { key: 'motivational_energetic', label: 'Motivational & energetic', gloss: 'Upbeat, action-oriented' },
-      { key: 'luxury_prestige', label: 'Luxury & prestige', gloss: 'Refined, exclusive feel' },
-      { key: 'care_trustworthy', label: 'Care & trustworthy', gloss: 'Empathetic, reliable support' },
-      { key: 'brand_custom', label: 'Brand custom', gloss: 'Matches a specific brand voice' },
     ],
   },
   {

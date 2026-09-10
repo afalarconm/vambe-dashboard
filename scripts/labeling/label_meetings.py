@@ -35,15 +35,14 @@ def save_category(conn, meeting_id: int, cats: dict, model: str):
     conn.execute(
         """INSERT OR REPLACE INTO categories
            (meeting_id, primary_job, handoff_topology, system_gravity, trust_surface,
-            voice_contract, buying_trigger, volume_band, model, prompt_version, labeled_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            buying_trigger, volume_band, model, prompt_version, labeled_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             meeting_id,
             cats["primary_job"],
             cats["handoff_topology"],
             cats["system_gravity"],
             cats["trust_surface"],
-            cats["voice_contract"],
             cats["buying_trigger"],
             cats["volume_band"],
             model,

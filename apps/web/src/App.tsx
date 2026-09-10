@@ -1,6 +1,6 @@
-import { Fragment, useCallback, useEffect, useState } from 'react'
+import { Fragment, useCallback, useEffect, useState, type ReactNode } from 'react'
 import {
-  Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis,
+  Bar, BarChart, CartesianGrid, Cell, LabelList, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts'
 import DimensionsPage from './DimensionsPage'
 import './App.css'
@@ -13,18 +13,24 @@ type Filters = {
   handoff_topologies: string[]
   trust_surfaces: string[]
   buying_triggers: string[]
+  system_gravities: string[]
+  volume_bands: string[]
 }
 
 type Meeting = {
   id: number
   nombre: string
+  email: string
   seller: string
   meeting_date: string
   closed: number
+  transcript: string | null
   primary_job: string | null
   handoff_topology: string | null
+  system_gravity: string | null
   trust_surface: string | null
   buying_trigger: string | null
+  volume_band: string | null
   model: string | null
   prompt_version: string | null
 }
@@ -60,69 +66,177 @@ function shortModelName(model: string): string {
   return slash >= 0 ? model.slice(slash + 1) : model
 }
 
+type Metrics = {
+  by_job: WinRateJob[]
+  by_handoff: WinRateHandoff[]
+  by_trigger: WinRateTrigger[]
+  by_volume_band: WinRateVolumeBand[]
+  gravity_mix: GravityMix[]
+  job_handoff_heatmap: JobHandoffHeatmap
+  summary: { labeled: number; wins: number; win_rate: number }
+}
+
 const BAR_CHARTS = [
-  { title: 'Win rate by primary job', dataKey: 'byJob' as const, xKey: 'job' as const, color: CHART_COLORS.job, icon: 'chart__icon--blue', glyph: '▮' },
-  { title: 'Win rate by handoff topology', dataKey: 'byHandoff' as const, xKey: 'handoff' as const, color: CHART_COLORS.handoff, icon: 'chart__icon--sky', glyph: '⇄' },
-  { title: 'Win rate by buying trigger', dataKey: 'byTrigger' as const, xKey: 'trigger' as const, color: CHART_COLORS.trigger, icon: 'chart__icon--orange', glyph: '⚡' },
-  { title: 'System gravity mix', dataKey: 'gravityMix' as const, xKey: 'gravity' as const, color: CHART_COLORS.gravity, icon: 'chart__icon--purple', glyph: '◎' },
-  { title: 'Win rate by volume band', dataKey: 'byVolumeBand' as const, xKey: 'volume_band' as const, color: CHART_COLORS.volume, icon: 'chart__icon--teal', glyph: '▤' },
+  { title: 'Win rate by primary job', dataKey: 'by_job' as const, xKey: 'job' as const, color: CHART_COLORS.job, icon: 'chart__icon--blue', glyph: 'bars' as const },
+  { title: 'Win rate by handoff topology', dataKey: 'by_handoff' as const, xKey: 'handoff' as const, color: CHART_COLORS.handoff, icon: 'chart__icon--sky', glyph: 'handoff' as const },
+  { title: 'Win rate by buying trigger', dataKey: 'by_trigger' as const, xKey: 'trigger' as const, color: CHART_COLORS.trigger, icon: 'chart__icon--orange', glyph: 'trigger' as const },
+  { title: 'System gravity mix', dataKey: 'gravity_mix' as const, xKey: 'gravity' as const, color: CHART_COLORS.gravity, icon: 'chart__icon--purple', glyph: 'gravity' as const },
+  { title: 'Win rate by volume band', dataKey: 'by_volume_band' as const, xKey: 'volume_band' as const, color: CHART_COLORS.volume, icon: 'chart__icon--teal', glyph: 'volume' as const },
 ] as const
 
-function Chart({ title, data, xKey, fill, iconClass, glyph }: {
+type Glyph = 'bars' | 'handoff' | 'trigger' | 'gravity' | 'volume' | 'grid'
+
+function ChartGlyph({ name }: { name: Glyph }) {
+  return (
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      {name === 'bars' && (
+        <>
+          <path d="M6 20V10" />
+          <path d="M12 20V4" />
+          <path d="M18 20v-6" />
+        </>
+      )}
+      {name === 'handoff' && (
+        <>
+          <path d="M8 8H4v4" />
+          <path d="M4 8l6 6" />
+          <path d="M16 16h4v-4" />
+          <path d="M20 16l-6-6" />
+        </>
+      )}
+      {name === 'trigger' && <path d="M13 3L4 14h7l-1 7 9-11h-7l1-7z" />}
+      {name === 'gravity' && (
+        <>
+          <circle cx="12" cy="12" r="3" />
+          <circle cx="12" cy="12" r="8" />
+        </>
+      )}
+      {name === 'volume' && (
+        <>
+          <rect x="4" y="4" width="7" height="7" rx="1" />
+          <rect x="13" y="4" width="7" height="7" rx="1" />
+          <rect x="4" y="13" width="7" height="7" rx="1" />
+          <rect x="13" y="13" width="7" height="7" rx="1" />
+        </>
+      )}
+      {name === 'grid' && (
+        <>
+          <rect x="3" y="3" width="18" height="18" rx="2" />
+          <path d="M3 9h18M3 15h18M9 3v18M15 3v18" />
+        </>
+      )}
+    </svg>
+  )
+}
+
+function prettyLabel(value: unknown) {
+  return String(value ?? '').replace(/_/g, ' ')
+}
+
+function barValue(d: unknown, xKey: string): string {
+  if (!d || typeof d !== 'object') return ''
+  const rec = d as Record<string, unknown>
+  if (xKey in rec) return String(rec[xKey] ?? '')
+  const payload = rec.payload
+  if (payload && typeof payload === 'object' && xKey in payload) {
+    return String((payload as Record<string, unknown>)[xKey] ?? '')
+  }
+  return ''
+}
+
+function FilterField({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <label className="filter-field">
+      <span className="filter-field__label">{label}</span>
+      {children}
+    </label>
+  )
+}
+
+const TOOLTIP_STYLE = {
+  borderRadius: 'var(--radius-lg)',
+  border: '1px solid var(--color-border)',
+  background: 'var(--color-surface)',
+  fontFamily: 'var(--font-sans)',
+  fontSize: '0.8125rem',
+  boxShadow: 'var(--shadow-md)',
+} as const
+
+function Chart({ title, data, xKey, fill, iconClass, glyph, selected, onSelect }: {
   title: string
   data: Record<string, unknown>[]
   xKey: string
   fill: string
   iconClass: string
-  glyph: string
+  glyph: Glyph
+  selected: string
+  onSelect: (value: string) => void
 }) {
   const isGravity = xKey === 'gravity'
+  const valueKey = isGravity ? 'count' : 'win_rate'
+  const height = Math.max(128, data.length * 36 + 8)
 
   return (
-    <div className="chart">
+    <figure className="chart">
       <div className="chart__header">
-        <span className={`chart__icon ${iconClass}`} aria-hidden>{glyph}</span>
+        <span className={`chart__icon ${iconClass}`} aria-hidden>
+          <ChartGlyph name={glyph} />
+        </span>
         <h2>{title}</h2>
       </div>
-      <ResponsiveContainer width="100%" height={240}>
-        <BarChart data={data} margin={{ bottom: 50 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
-          <XAxis
-            dataKey={xKey}
-            angle={-30}
-            textAnchor="end"
-            interval={0}
-            tick={{ fontSize: 10, fill: 'var(--color-text-muted)' }}
-            axisLine={{ stroke: 'var(--color-border)' }}
-            tickLine={{ stroke: 'var(--color-border)' }}
-          />
-          <YAxis
-            unit={isGravity ? '' : '%'}
-            domain={isGravity ? undefined : [0, 100]}
-            tick={{ fontSize: 11, fill: 'var(--color-text-muted)' }}
-            axisLine={{ stroke: 'var(--color-border)' }}
-            tickLine={{ stroke: 'var(--color-border)' }}
-          />
-          <Tooltip
-            formatter={(v) => [isGravity ? v : `${v ?? 0}%`, isGravity ? 'Count' : 'Win rate']}
-            contentStyle={{
-              borderRadius: 'var(--radius-lg)',
-              border: '1px solid var(--color-border)',
-              background: 'var(--color-surface)',
-              fontFamily: 'var(--font-sans)',
-              fontSize: '0.8125rem',
-              boxShadow: 'var(--shadow-md)',
-            }}
-            labelStyle={{ fontWeight: 600, color: 'var(--color-text)' }}
-          />
-          <Bar
-            dataKey={isGravity ? 'count' : 'win_rate'}
-            fill={fill}
-            radius={[6, 6, 0, 0]}
-          />
-        </BarChart>
-      </ResponsiveContainer>
-    </div>
+      {data.length === 0 ? (
+        <p className="chart__empty">No labeled rows in this filter.</p>
+      ) : (
+        <ResponsiveContainer width="100%" height={height}>
+          <BarChart data={data} layout="vertical" margin={{ top: 4, right: 44, bottom: 4, left: 4 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" horizontal={false} />
+            <XAxis
+              type="number"
+              domain={isGravity ? [0, 'auto'] : [0, 100]}
+              hide
+            />
+            <YAxis
+              type="category"
+              dataKey={xKey}
+              width={148}
+              tickFormatter={prettyLabel}
+              tick={{ fontSize: 11, fill: 'var(--color-text-muted)' }}
+              axisLine={false}
+              tickLine={false}
+            />
+            <Tooltip
+              formatter={(v) => [isGravity ? v : `${v ?? 0}%`, isGravity ? 'Count' : 'Win rate']}
+              labelFormatter={prettyLabel}
+              contentStyle={TOOLTIP_STYLE}
+              labelStyle={{ fontWeight: 600, color: 'var(--color-text)' }}
+            />
+            <Bar
+              dataKey={valueKey}
+              fill={fill}
+              radius={[0, 4, 4, 0]}
+              maxBarSize={18}
+              cursor="pointer"
+              onClick={(d) => {
+                const value = barValue(d, xKey)
+                if (value) onSelect(value)
+              }}
+            >
+              {data.map((row) => {
+                const value = String(row[xKey] ?? '')
+                const dimmed = Boolean(selected) && selected !== value
+                return <Cell key={value} fill={fill} opacity={dimmed ? 0.35 : 1} />
+              })}
+              <LabelList
+                dataKey={valueKey}
+                position="right"
+                formatter={(v) => (isGravity ? String(v ?? '') : `${v ?? 0}%`)}
+                style={{ fontSize: 11, fill: 'var(--color-text-muted)' }}
+              />
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      )}
+    </figure>
   )
 }
 
@@ -134,38 +248,54 @@ function heatColor(winRate: number): string {
   return `rgb(${r}, ${g}, ${b})`
 }
 
-function Heatmap({ data }: { data: JobHandoffHeatmap }) {
+function Heatmap({ data, selectedJob, selectedHandoff, onSelect }: {
+  data: JobHandoffHeatmap
+  selectedJob: string
+  selectedHandoff: string
+  onSelect: (job: string, handoff: string) => void
+}) {
   const lookup = new Map(
     data.cells.map((c) => [`${c.job}|${c.handoff}`, c]),
   )
 
   return (
-    <div className="chart chart--heatmap">
+    <figure className="chart chart--heatmap">
       <div className="chart__header">
-        <span className="chart__icon chart__icon--green" aria-hidden>▦</span>
+        <span className="chart__icon chart__icon--green" aria-hidden>
+          <ChartGlyph name="grid" />
+        </span>
         <h2>Win rate: job × handoff</h2>
       </div>
       <div className="heatmap-wrap">
         <div
           className="heatmap"
-          style={{ gridTemplateColumns: `minmax(7rem, 1.2fr) repeat(${data.handoffs.length}, 1fr)` }}
+          style={{ gridTemplateColumns: `minmax(8.5rem, 11rem) repeat(${data.handoffs.length}, 1fr)` }}
         >
           <div className="heatmap__corner" />
           {data.handoffs.map((h) => (
-            <div key={h} className="heatmap__col-label" title={h}>{h.replace(/_/g, ' ')}</div>
+            <div key={h} className="heatmap__col-label" title={prettyLabel(h)}>{prettyLabel(h)}</div>
           ))}
           {data.jobs.map((job) => (
             <Fragment key={job}>
-              <div className="heatmap__row-label" title={job}>{job.replace(/_/g, ' ')}</div>
+              <div className="heatmap__row-label" title={prettyLabel(job)}>{prettyLabel(job)}</div>
               {data.handoffs.map((handoff) => {
                 const cell = lookup.get(`${job}|${handoff}`)
                 const thin = !cell || cell.total < data.min_sample
+                const active = selectedJob === job && selectedHandoff === handoff
+                const label = cell
+                  ? `${prettyLabel(job)} × ${prettyLabel(handoff)}: ${cell.win_rate}% (${cell.wins}/${cell.total})`
+                  : `${prettyLabel(job)} × ${prettyLabel(handoff)}: no data`
                 return (
-                  <div
+                  <button
                     key={`${job}|${handoff}`}
-                    className={`heatmap__cell${thin ? ' heatmap__cell--thin' : ''}`}
-                    style={thin ? undefined : { background: heatColor(cell!.win_rate) }}
-                    title={cell ? `${job} × ${handoff}: ${cell.win_rate}% (${cell.wins}/${cell.total})` : 'No data'}
+                    type="button"
+                    className={`heatmap__cell${thin ? ' heatmap__cell--thin' : ''}${active ? ' heatmap__cell--active' : ''}`}
+                    style={thin || !cell ? undefined : { background: heatColor(cell.win_rate) }}
+                    title={label}
+                    aria-pressed={active}
+                    aria-label={label}
+                    disabled={!cell}
+                    onClick={() => onSelect(job, handoff)}
                   >
                     {cell ? (
                       thin ? <span className="heatmap__n">n={cell.total}</span> : (
@@ -175,14 +305,81 @@ function Heatmap({ data }: { data: JobHandoffHeatmap }) {
                         </>
                       )
                     ) : '—'}
-                  </div>
+                  </button>
                 )
               })}
             </Fragment>
           ))}
         </div>
       </div>
-      <p className="heatmap__legend">Cells with n &lt; {data.min_sample} are greyed out.</p>
+      <div className="heatmap__legend">
+        <span>Click a cell to filter by job and handoff. Cells with n &lt; {data.min_sample} are greyed out.</span>
+        <span className="heatmap__scale" aria-hidden>
+          <span>0%</span>
+          <span className="heatmap__scale-bar" />
+          <span>100%</span>
+        </span>
+      </div>
+    </figure>
+  )
+}
+
+function TranscriptDrawer({ meeting, onClose }: { meeting: Meeting; onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      document.body.style.overflow = prev
+    }
+  }, [onClose])
+
+  const labels = [
+    meeting.primary_job && ['Job', meeting.primary_job],
+    meeting.handoff_topology && ['Handoff', meeting.handoff_topology],
+    meeting.system_gravity && ['Gravity', meeting.system_gravity],
+    meeting.trust_surface && ['Trust', meeting.trust_surface],
+    meeting.buying_trigger && ['Trigger', meeting.buying_trigger],
+    meeting.volume_band && ['Volume', meeting.volume_band],
+  ].filter(Boolean) as [string, string][]
+
+  return (
+    <div className="drawer-scrim" onClick={onClose}>
+      <aside
+        className="drawer"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="transcript-title"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <header className="drawer__header">
+          <div>
+            <h2 id="transcript-title" className="drawer__title">{meeting.nombre}</h2>
+            <p className="drawer__meta">
+              {meeting.seller} · {meeting.meeting_date} · {meeting.closed ? 'Won' : 'Open'}
+            </p>
+          </div>
+          <button type="button" className="drawer__close" onClick={onClose} aria-label="Close transcript">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+              <path d="M6 6l12 12M18 6L6 18" />
+            </svg>
+          </button>
+        </header>
+        {labels.length > 0 && (
+          <dl className="drawer__labels">
+            {labels.map(([k, v]) => (
+              <div key={k}>
+                <dt>{k}</dt>
+                <dd>{prettyLabel(v)}</dd>
+              </div>
+            ))}
+          </dl>
+        )}
+        <h3 className="drawer__section">Transcript</h3>
+        <p className="transcript">{meeting.transcript || 'No transcript for this meeting.'}</p>
+      </aside>
     </div>
   )
 }
@@ -191,12 +388,7 @@ export default function App() {
   const [filters, setFilters] = useState<Filters | null>(null)
   const [meetings, setMeetings] = useState<Meeting[]>([])
   const [total, setTotal] = useState(0)
-  const [byJob, setByJob] = useState<WinRateJob[]>([])
-  const [byHandoff, setByHandoff] = useState<WinRateHandoff[]>([])
-  const [byTrigger, setByTrigger] = useState<WinRateTrigger[]>([])
-  const [byVolumeBand, setByVolumeBand] = useState<WinRateVolumeBand[]>([])
-  const [gravityMix, setGravityMix] = useState<GravityMix[]>([])
-  const [jobHandoffHeatmap, setJobHandoffHeatmap] = useState<JobHandoffHeatmap | null>(null)
+  const [metrics, setMetrics] = useState<Metrics | null>(null)
   const [health, setHealth] = useState<Health | null>(null)
   const [loading, setLoading] = useState(true)
   const [labeledOnly, setLabeledOnly] = useState(true)
@@ -206,8 +398,11 @@ export default function App() {
   const [handoff, setHandoff] = useState('')
   const [trust, setTrust] = useState('')
   const [trigger, setTrigger] = useState('')
+  const [gravity, setGravity] = useState('')
+  const [volumeBand, setVolumeBand] = useState('')
   const [q, setQ] = useState('')
   const [tab, setTab] = useState<Tab>('dashboard')
+  const [selected, setSelected] = useState<Meeting | null>(null)
 
   const params = useCallback(() => {
     const p = new URLSearchParams()
@@ -217,34 +412,63 @@ export default function App() {
     if (handoff) p.set('handoff_topology', handoff)
     if (trust) p.set('trust_surface', trust)
     if (trigger) p.set('buying_trigger', trigger)
+    if (gravity) p.set('system_gravity', gravity)
+    if (volumeBand) p.set('volume_band', volumeBand)
     if (q) p.set('q', q)
     if (labeledOnly) p.set('labeled_only', 'true')
     return p
-  }, [seller, closed, primaryJob, handoff, trust, trigger, q, labeledOnly])
+  }, [seller, closed, primaryJob, handoff, trust, trigger, gravity, volumeBand, q, labeledOnly])
 
   useEffect(() => {
-    Promise.all([
-      fetch(`${API}/health`).then((r) => r.json()).then(setHealth),
-      fetch(`${API}/filters`).then((r) => r.json()).then(setFilters),
-      fetch(`${API}/metrics/win-rate-by-job`).then((r) => r.json()).then(setByJob),
-      fetch(`${API}/metrics/win-rate-by-handoff`).then((r) => r.json()).then(setByHandoff),
-      fetch(`${API}/metrics/win-rate-by-trigger`).then((r) => r.json()).then(setByTrigger),
-      fetch(`${API}/metrics/win-rate-by-volume-band`).then((r) => r.json()).then(setByVolumeBand),
-      fetch(`${API}/metrics/system-gravity-mix`).then((r) => r.json()).then(setGravityMix),
-      fetch(`${API}/metrics/job-handoff-heatmap`).then((r) => r.json()).then(setJobHandoffHeatmap),
-    ]).finally(() => setLoading(false))
+    fetch(`${API}/health`).then((r) => r.json()).then(setHealth)
+    fetch(`${API}/filters`).then((r) => r.json()).then(setFilters)
   }, [])
 
   useEffect(() => {
-    fetch(`${API}/meetings?${params()}`)
-      .then((r) => r.json())
-      .then((d) => { setMeetings(d.items); setTotal(d.total) })
+    const p = params()
+    let cancelled = false
+    Promise.all([
+      fetch(`${API}/meetings?${p}`).then((r) => r.json()),
+      fetch(`${API}/metrics?${p}`).then((r) => r.json()),
+    ]).then(([meetingsRes, metricsRes]: [{ items: Meeting[]; total: number }, Metrics]) => {
+      if (cancelled) return
+      setMeetings(meetingsRes.items)
+      setTotal(meetingsRes.total)
+      setMetrics(metricsRes)
+      setLoading(false)
+    })
+    return () => { cancelled = true }
   }, [params])
 
   const filtersActive = !labeledOnly || Boolean(
-    seller || closed !== '' || primaryJob || handoff || trust || trigger || q,
+    seller || closed !== '' || primaryJob || handoff || trust || trigger || gravity || volumeBand || q,
   )
-  const chartData = { byJob, byHandoff, byTrigger, byVolumeBand, gravityMix }
+
+  const chartSelected: Record<string, string> = {
+    job: primaryJob,
+    handoff,
+    trigger,
+    gravity,
+    volume_band: volumeBand,
+  }
+
+  const selectChart = (xKey: string, value: string) => {
+    const toggle = (current: string, set: (v: string) => void) => set(current === value ? '' : value)
+    if (xKey === 'job') toggle(primaryJob, setPrimaryJob)
+    else if (xKey === 'handoff') toggle(handoff, setHandoff)
+    else if (xKey === 'trigger') toggle(trigger, setTrigger)
+    else if (xKey === 'gravity') toggle(gravity, setGravity)
+    else if (xKey === 'volume_band') toggle(volumeBand, setVolumeBand)
+  }
+
+  const chips = [
+    primaryJob && { key: 'job', label: 'Job', value: primaryJob, clear: () => setPrimaryJob('') },
+    handoff && { key: 'handoff', label: 'Handoff', value: handoff, clear: () => setHandoff('') },
+    trust && { key: 'trust', label: 'Trust', value: trust, clear: () => setTrust('') },
+    trigger && { key: 'trigger', label: 'Trigger', value: trigger, clear: () => setTrigger('') },
+    gravity && { key: 'gravity', label: 'Gravity', value: gravity, clear: () => setGravity('') },
+    volumeBand && { key: 'volume', label: 'Volume', value: volumeBand, clear: () => setVolumeBand('') },
+  ].filter(Boolean) as { key: string; label: string; value: string; clear: () => void }[]
 
   if (loading) {
     return (
@@ -257,8 +481,9 @@ export default function App() {
     )
   }
 
-  return (
+    return (
     <div className="app">
+      <a className="skip-link" href="#main">Skip to content</a>
       <header className="app-header">
         <div className="app-header__brand">
           <div className="app-header__logo" aria-hidden>V</div>
@@ -298,79 +523,153 @@ export default function App() {
         </button>
       </nav>
 
+      <main id="main">
       {tab === 'dimensions' ? (
         <DimensionsPage />
       ) : (
         <>
       <section className="filters" aria-label="Filters">
-        <select
-          value={labeledOnly ? 'labeled' : 'all'}
-          onChange={(e) => setLabeledOnly(e.target.value === 'labeled')}
-          aria-label="Show labeled or all meetings"
-        >
-          <option value="labeled">Labeled</option>
-          <option value="all">All meetings</option>
-        </select>
-        <select value={seller} onChange={(e) => setSeller(e.target.value)} aria-label="Filter by seller">
-          <option value="">All sellers</option>
-          {filters?.sellers.map((s) => <option key={s} value={s}>{s}</option>)}
-        </select>
-        <select value={closed} onChange={(e) => setClosed(e.target.value)} aria-label="Filter by outcome">
-          <option value="">All outcomes</option>
-          <option value="1">Closed won</option>
-          <option value="0">Open</option>
-        </select>
-        <select value={primaryJob} onChange={(e) => setPrimaryJob(e.target.value)} aria-label="Filter by primary job">
-          <option value="">All jobs</option>
-          {filters?.primary_jobs.map((j) => <option key={j} value={j}>{j}</option>)}
-        </select>
-        <select value={handoff} onChange={(e) => setHandoff(e.target.value)} aria-label="Filter by handoff">
-          <option value="">All handoff</option>
-          {filters?.handoff_topologies.map((h) => <option key={h} value={h}>{h}</option>)}
-        </select>
-        <select value={trust} onChange={(e) => setTrust(e.target.value)} aria-label="Filter by trust surface">
-          <option value="">All trust</option>
-          {filters?.trust_surfaces.map((t) => <option key={t} value={t}>{t}</option>)}
-        </select>
-        <select value={trigger} onChange={(e) => setTrigger(e.target.value)} aria-label="Filter by buying trigger">
-          <option value="">All triggers</option>
-          {filters?.buying_triggers.map((t) => <option key={t} value={t}>{t}</option>)}
-        </select>
-        <input
-          placeholder="Search name or transcript…"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          aria-label="Search meetings"
-        />
+        <FilterField label="Coverage">
+          <select
+            value={labeledOnly ? 'labeled' : 'all'}
+            onChange={(e) => setLabeledOnly(e.target.value === 'labeled')}
+          >
+            <option value="labeled">Labeled</option>
+            <option value="all">All meetings</option>
+          </select>
+        </FilterField>
+        <FilterField label="Seller">
+          <select value={seller} onChange={(e) => setSeller(e.target.value)}>
+            <option value="">All</option>
+            {filters?.sellers.map((s) => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </FilterField>
+        <FilterField label="Outcome">
+          <select value={closed} onChange={(e) => setClosed(e.target.value)}>
+            <option value="">All</option>
+            <option value="1">Closed won</option>
+            <option value="0">Open</option>
+          </select>
+        </FilterField>
+        <FilterField label="Primary job">
+          <select value={primaryJob} onChange={(e) => setPrimaryJob(e.target.value)}>
+            <option value="">All</option>
+            {filters?.primary_jobs.map((j) => <option key={j} value={j}>{j.replace(/_/g, ' ')}</option>)}
+          </select>
+        </FilterField>
+        <FilterField label="Handoff">
+          <select value={handoff} onChange={(e) => setHandoff(e.target.value)}>
+            <option value="">All</option>
+            {filters?.handoff_topologies.map((h) => <option key={h} value={h}>{h.replace(/_/g, ' ')}</option>)}
+          </select>
+        </FilterField>
+        <FilterField label="Trust">
+          <select value={trust} onChange={(e) => setTrust(e.target.value)}>
+            <option value="">All</option>
+            {filters?.trust_surfaces.map((t) => <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>)}
+          </select>
+        </FilterField>
+        <FilterField label="Trigger">
+          <select value={trigger} onChange={(e) => setTrigger(e.target.value)}>
+            <option value="">All</option>
+            {filters?.buying_triggers.map((t) => <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>)}
+          </select>
+        </FilterField>
+        <FilterField label="Gravity">
+          <select value={gravity} onChange={(e) => setGravity(e.target.value)}>
+            <option value="">All</option>
+            {filters?.system_gravities.map((g) => <option key={g} value={g}>{g.replace(/_/g, ' ')}</option>)}
+          </select>
+        </FilterField>
+        <FilterField label="Volume">
+          <select value={volumeBand} onChange={(e) => setVolumeBand(e.target.value)}>
+            <option value="">All</option>
+            {filters?.volume_bands.map((v) => <option key={v} value={v}>{v.replace(/_/g, ' ')}</option>)}
+          </select>
+        </FilterField>
+        <FilterField label="Search">
+          <input
+            placeholder="Name or transcript…"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+          />
+        </FilterField>
       </section>
 
       <p className="section-heading">Performance metrics</p>
+      {metrics?.summary && (
+        <section className="kpis" aria-label="Filtered totals">
+          <div className="kpi">
+            <span className="kpi__value">{metrics.summary.win_rate}%</span>
+            <span className="kpi__label">Win rate</span>
+          </div>
+          <div className="kpi">
+            <span className="kpi__value">{metrics.summary.labeled.toLocaleString()}</span>
+            <span className="kpi__label">Labeled in view</span>
+          </div>
+          <div className="kpi">
+            <span className="kpi__value">{metrics.summary.wins.toLocaleString()}</span>
+            <span className="kpi__label">Closed won</span>
+          </div>
+        </section>
+      )}
+      <p className="chart-hint">Click a bar or heatmap cell to filter. Click again to clear.</p>
+      {chips.length > 0 && (
+        <div className="chips" aria-label="Active chart filters">
+          {chips.map((chip) => (
+            <button key={chip.key} type="button" className="chip" onClick={chip.clear}>
+              {chip.label}: {prettyLabel(chip.value)}
+              <span aria-hidden>×</span>
+            </button>
+          ))}
+        </div>
+      )}
       <section className="charts">
         {BAR_CHARTS.map((c) => (
           <Chart
             key={c.xKey}
             title={c.title}
-            data={chartData[c.dataKey] as Record<string, unknown>[]}
+            data={(metrics?.[c.dataKey] ?? []) as Record<string, unknown>[]}
             xKey={c.xKey}
             fill={c.color}
             iconClass={c.icon}
             glyph={c.glyph}
+            selected={chartSelected[c.xKey]}
+            onSelect={(value) => selectChart(c.xKey, value)}
           />
         ))}
-        {jobHandoffHeatmap && <Heatmap data={jobHandoffHeatmap} />}
       </section>
+      {metrics?.job_handoff_heatmap.handoffs.length ? (
+        <Heatmap
+          data={metrics.job_handoff_heatmap}
+          selectedJob={primaryJob}
+          selectedHandoff={handoff}
+          onSelect={(job, nextHandoff) => {
+            if (primaryJob === job && handoff === nextHandoff) {
+              setPrimaryJob('')
+              setHandoff('')
+            } else {
+              setPrimaryJob(job)
+              setHandoff(nextHandoff)
+            }
+          }}
+        />
+      ) : null}
 
       <section className="table-section">
         <div className="table-section__header">
           <h2 className="table-section__title">Meetings</h2>
           <span className="table-section__count">
             {meetings.length} shown{total > meetings.length ? ` · ${total.toLocaleString()} match` : ''}
+            {' · click a row for the transcript'}
           </span>
         </div>
         <div className="table-wrap">
           {meetings.length === 0 ? (
             <div className="empty-state">
-              <div className="empty-state__icon" aria-hidden>∅</div>
+              <div className="empty-state__icon" aria-hidden>
+                <ChartGlyph name="bars" />
+              </div>
               <p>No meetings match your filters.</p>
             </div>
           ) : (
@@ -388,8 +687,16 @@ export default function App() {
               </thead>
               <tbody>
                 {meetings.map((m) => (
-                  <tr key={m.id}>
-                    <td>{m.nombre}</td>
+                  <tr
+                    key={m.id}
+                    className="table-row--clickable"
+                    onClick={() => setSelected(m)}
+                  >
+                    <td>
+                      <button type="button" className="row-open" onClick={() => setSelected(m)}>
+                        {m.nombre}
+                      </button>
+                    </td>
                     <td>{m.seller}</td>
                     <td>{m.meeting_date}</td>
                     <td>
@@ -397,8 +704,8 @@ export default function App() {
                         {m.closed ? 'Won' : 'Open'}
                       </span>
                     </td>
-                    <td>{m.primary_job ?? '—'}</td>
-                    <td>{m.handoff_topology ?? '—'}</td>
+                    <td>{m.primary_job ? prettyLabel(m.primary_job) : '—'}</td>
+                    <td>{m.handoff_topology ? prettyLabel(m.handoff_topology) : '—'}</td>
                     <td>
                       {m.model ? (
                         <span className="model-cell">
@@ -418,8 +725,10 @@ export default function App() {
           )}
         </div>
       </section>
+      {selected && <TranscriptDrawer meeting={selected} onClose={() => setSelected(null)} />}
         </>
       )}
+      </main>
     </div>
   )
 }
