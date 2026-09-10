@@ -32,7 +32,7 @@ type WinRateHandoff = WinRate & { handoff: string }
 type WinRateTrigger = WinRate & { trigger: string }
 type GravityMix = { gravity: string; count: number; share: number }
 
-const API = '/api'
+const API = import.meta.env.DEV ? '/api' : ''
 
 function Chart({ title, data, xKey, fill }: {
   title: string

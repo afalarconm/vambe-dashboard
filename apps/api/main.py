@@ -3,13 +3,16 @@ from pathlib import Path
 import sqlite3
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
-DB_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "meetings.db"
+ROOT = Path(__file__).resolve().parent.parent.parent
+DB_PATH = ROOT / "data" / "meetings.db"
+STATIC_DIR = Path(__file__).resolve().parent.parent / "web" / "dist"
 
 app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -34,6 +37,14 @@ def win_rate(conn, group_col: str, alias: str):
         ORDER BY win_rate DESC
     """).fetchall()
     return [dict(r) for r in rows]
+
+
+@app.get("/health")
+def health():
+    conn = db()
+    n = conn.execute("SELECT COUNT(*) FROM categories WHERE prompt_version='llm-v1'").fetchone()[0]
+    conn.close()
+    return {"ok": True, "llm_labels": n}
 
 
 @app.get("/meetings")
@@ -158,3 +169,7 @@ def filters():
     }
     conn.close()
     return result
+
+
+if STATIC_DIR.exists():
+    app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")

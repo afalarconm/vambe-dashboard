@@ -1,0 +1,8 @@
+node_modules
+apps/web/dist
+apps/web/node_modules
+data/meetings.db
+.git
+__pycache__
+*.pyc
+.env
