@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Label, bake, serve · Architecture</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --color-paper:   #F8FAFC;
+      --color-ink:     #0F172A;
+      --color-muted:   #475569;
+      --color-accent:  #FF6900;
+      --font-sans:     'Geist', system-ui, sans-serif;
+      --font-serif:    'Instrument Serif', serif;
+      --font-mono:     'Geist Mono', ui-monospace, monospace;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-paper);
+      color: var(--color-ink);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 3rem 2rem;
+    }
+
+    .frame { max-width: 1200px; width: 100%; }
+
+    .eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.66rem;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--color-muted);
+      margin-bottom: 0.5rem;
+    }
+
+    h1 {
+      font-family: var(--font-serif);
+      font-size: clamp(1.5rem, 2.4vw + 0.75rem, 2rem);
+      font-weight: 400;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      color: var(--color-ink);
+      margin-bottom: 1.5rem;
+    }
+
+    svg { width: 100%; min-width: 900px; display: block; }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <p class="eyebrow">Architecture · Vambe Dashboard</p>
+    <h1>Label, bake, serve</h1>
+
+    <svg viewBox="0 0 960 440" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="how-it-works-title how-it-works-desc">
+      <title id="how-it-works-title">Label, bake, serve</title>
+      <desc id="how-it-works-desc">Offline Gemma labels and a CSV of sales transcripts are baked into SQLite at build time. FastAPI serves that database read-only to the React dashboard. No LLM runs in production.</desc>
+      <defs>
+        <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#475569"/></marker>
+        <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#FF6900"/></marker>
+        <marker id="arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#437AEF"/></marker>
+      </defs>
+
+      <rect width="100%" height="100%" fill="#F8FAFC"/>
+
+      <!-- Zones -->
+      <rect x="40" y="56" width="576" height="280" rx="8"
+            fill="rgba(15,23,42,0.02)" stroke="rgba(15,23,42,0.10)" stroke-width="0.8"/>
+      <rect x="272" y="60" width="44" height="12" rx="2" fill="#F8FAFC"/>
+      <text x="294" y="69" fill="rgba(15,23,42,0.40)" font-size="8" font-family="'Geist Mono', monospace"
+            text-anchor="middle" letter-spacing="0.14em">BUILD</text>
+
+      <rect x="632" y="56" width="288" height="280" rx="8"
+            fill="rgba(15,23,42,0.02)" stroke="rgba(15,23,42,0.10)" stroke-width="0.8"/>
+      <rect x="748" y="60" width="44" height="12" rx="2" fill="#F8FAFC"/>
+      <text x="770" y="69" fill="rgba(15,23,42,0.40)" font-size="8" font-family="'Geist Mono', monospace"
+            text-anchor="middle" letter-spacing="0.14em">SERVE</text>
+
+      <!-- Arrows (behind nodes) -->
+      <line x1="184" y1="120" x2="248" y2="120" stroke="rgba(15,23,42,0.20)" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+      <path d="M 392,120 H 396 Q 404,120 404,128 V 172 Q 404,180 412,180 H 440"
+            fill="none" stroke="#475569" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <path d="M 392,272 H 412 Q 420,272 420,264 V 220 Q 420,212 428,212 H 440"
+            fill="none" stroke="#475569" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <line x1="600" y1="196" x2="648" y2="196" stroke="#FF6900" stroke-width="1.4" marker-end="url(#arrow-accent)"/>
+      <line x1="776" y1="196" x2="800" y2="196" stroke="#437AEF" stroke-width="1.2" marker-end="url(#arrow-link)"/>
+
+      <!-- Arrow labels -->
+      <rect x="196" y="100" width="40" height="12" rx="2" fill="#F8FAFC"/>
+      <text x="216" y="109" fill="#64748B" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">LABEL</text>
+
+      <rect x="360" y="160" width="36" height="12" rx="2" fill="#F8FAFC"/>
+      <text x="378" y="169" fill="#64748B" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">LOAD</text>
+
+      <rect x="432" y="236" width="44" height="12" rx="2" fill="#F8FAFC"/>
+      <text x="454" y="245" fill="#64748B" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">INGEST</text>
+
+      <rect x="608" y="176" width="32" height="12" rx="2" fill="#F8FAFC"/>
+      <text x="624" y="185" fill="#FF6900" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">READ</text>
+
+      <!-- OpenRouter (optional / external) -->
+      <rect x="56" y="88" width="128" height="64" rx="6" fill="#F8FAFC"/>
+      <rect x="56" y="88" width="128" height="64" rx="6" fill="rgba(15,23,42,0.02)" stroke="rgba(15,23,42,0.20)" stroke-width="1" stroke-dasharray="4,3"/>
+      <rect x="64" y="96" width="28" height="12" rx="2" fill="transparent" stroke="rgba(15,23,42,0.20)" stroke-width="0.8"/>
+      <text x="78" y="105" fill="#64748B" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">LLM</text>
+      <text x="120" y="124" fill="#0F172A" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">OpenRouter</text>
+      <text x="120" y="140" fill="#475569" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">Gemma · offline</text>
+
+      <!-- Labels JSON (store) -->
+      <rect x="248" y="88" width="144" height="64" rx="6" fill="#F8FAFC"/>
+      <rect x="248" y="88" width="144" height="64" rx="6" fill="rgba(15,23,42,0.05)" stroke="#475569" stroke-width="1"/>
+      <rect x="256" y="96" width="32" height="12" rx="2" fill="transparent" stroke="rgba(71,85,105,0.50)" stroke-width="0.8"/>
+      <text x="272" y="105" fill="#475569" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">JSON</text>
+      <text x="320" y="124" fill="#0F172A" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Labels</text>
+      <text x="320" y="140" fill="#475569" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">llm-v1 JSON</text>
+
+      <!-- Transcripts CSV (input) -->
+      <rect x="248" y="240" width="144" height="64" rx="6" fill="#F8FAFC"/>
+      <rect x="248" y="240" width="144" height="64" rx="6" fill="rgba(71,85,105,0.10)" stroke="#64748B" stroke-width="1"/>
+      <rect x="256" y="248" width="28" height="12" rx="2" fill="transparent" stroke="rgba(100,116,139,0.40)" stroke-width="0.8"/>
+      <text x="270" y="257" fill="#64748B" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">CSV</text>
+      <text x="320" y="276" fill="#0F172A" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Transcripts</text>
+      <text x="320" y="292" fill="#475569" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">10k Spanish CSV</text>
+
+      <!-- SQLite (focal store) -->
+      <rect x="440" y="164" width="160" height="64" rx="6" fill="#F8FAFC"/>
+      <rect x="440" y="164" width="160" height="64" rx="6" fill="rgba(255,105,0,0.08)" stroke="#FF6900" stroke-width="1"/>
+      <rect x="448" y="172" width="24" height="12" rx="2" fill="transparent" stroke="rgba(255,105,0,0.50)" stroke-width="0.8"/>
+      <text x="460" y="181" fill="#FF6900" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">DB</text>
+      <text x="520" y="200" fill="#0F172A" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">SQLite</text>
+      <text x="520" y="216" fill="#475569" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">meetings.db</text>
+
+      <!-- FastAPI (backend) -->
+      <rect x="648" y="164" width="128" height="64" rx="6" fill="#F8FAFC"/>
+      <rect x="648" y="164" width="128" height="64" rx="6" fill="#ffffff" stroke="#0F172A" stroke-width="1"/>
+      <rect x="656" y="172" width="28" height="12" rx="2" fill="transparent" stroke="rgba(15,23,42,0.40)" stroke-width="0.8"/>
+      <text x="670" y="181" fill="#0F172A" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">API</text>
+      <text x="712" y="200" fill="#0F172A" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">FastAPI</text>
+      <text x="712" y="216" fill="#475569" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">apps/api</text>
+
+      <!-- Dashboard -->
+      <rect x="800" y="164" width="120" height="64" rx="6" fill="#F8FAFC"/>
+      <rect x="800" y="164" width="120" height="64" rx="6" fill="rgba(71,85,105,0.10)" stroke="#64748B" stroke-width="1"/>
+      <rect x="808" y="172" width="24" height="12" rx="2" fill="transparent" stroke="rgba(100,116,139,0.40)" stroke-width="0.8"/>
+      <text x="820" y="181" fill="#64748B" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">UI</text>
+      <text x="860" y="200" fill="#0F172A" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Dashboard</text>
+      <text x="860" y="216" fill="#475569" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">apps/web</text>
+
+      <!-- Legend -->
+      <line x1="40" y1="360" x2="920" y2="360" stroke="rgba(15,23,42,0.10)" stroke-width="0.8"/>
+      <text x="40" y="376" fill="#475569" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">LEGEND</text>
+
+      <rect x="40" y="392" width="14" height="10" rx="2" fill="rgba(255,105,0,0.08)" stroke="#FF6900" stroke-width="1"/>
+      <text x="60" y="400" fill="#475569" font-size="8" font-family="'Geist', sans-serif">Baked store</text>
+
+      <rect x="168" y="392" width="14" height="10" rx="2" fill="rgba(15,23,42,0.05)" stroke="#475569" stroke-width="1"/>
+      <text x="188" y="400" fill="#475569" font-size="8" font-family="'Geist', sans-serif">Artifact</text>
+
+      <rect x="272" y="392" width="14" height="10" rx="2" fill="#ffffff" stroke="#0F172A" stroke-width="1"/>
+      <text x="292" y="400" fill="#475569" font-size="8" font-family="'Geist', sans-serif">API</text>
+
+      <rect x="348" y="392" width="14" height="10" rx="2" fill="rgba(71,85,105,0.10)" stroke="#64748B" stroke-width="1"/>
+      <text x="368" y="400" fill="#475569" font-size="8" font-family="'Geist', sans-serif">Input / UI</text>
+
+      <rect x="464" y="392" width="14" height="10" rx="2" fill="rgba(15,23,42,0.02)" stroke="rgba(15,23,42,0.20)" stroke-width="1" stroke-dasharray="4,3"/>
+      <text x="484" y="400" fill="#475569" font-size="8" font-family="'Geist', sans-serif">Offline LLM</text>
+
+      <line x1="592" y1="397" x2="620" y2="397" stroke="#FF6900" stroke-width="1.4" marker-end="url(#arrow-accent)"/>
+      <text x="628" y="400" fill="#475569" font-size="8" font-family="'Geist', sans-serif">Primary</text>
+
+      <line x1="712" y1="397" x2="740" y2="397" stroke="#437AEF" stroke-width="1.2" marker-end="url(#arrow-link)"/>
+      <text x="748" y="400" fill="#475569" font-size="8" font-family="'Geist', sans-serif">HTTP</text>
+
+      <line x1="812" y1="397" x2="840" y2="397" stroke="rgba(15,23,42,0.20)" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+      <text x="848" y="400" fill="#475569" font-size="8" font-family="'Geist', sans-serif">Optional</text>
+    </svg>
+  </div>
+</body>
+</html>
