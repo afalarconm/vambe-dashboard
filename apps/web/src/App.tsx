@@ -55,6 +55,11 @@ const CHART_COLORS = {
   volume: 'var(--color-chart-5)',
 } as const
 
+function shortModelName(model: string): string {
+  const slash = model.lastIndexOf('/')
+  return slash >= 0 ? model.slice(slash + 1) : model
+}
+
 const BAR_CHARTS = [
   { title: 'Win rate by primary job', dataKey: 'byJob' as const, xKey: 'job' as const, color: CHART_COLORS.job, icon: 'chart__icon--blue', glyph: '▮' },
   { title: 'Win rate by handoff topology', dataKey: 'byHandoff' as const, xKey: 'handoff' as const, color: CHART_COLORS.handoff, icon: 'chart__icon--sky', glyph: '⇄' },
@@ -394,7 +399,18 @@ export default function App() {
                     </td>
                     <td>{m.primary_job ?? '—'}</td>
                     <td>{m.handoff_topology ?? '—'}</td>
-                    <td title={m.model ?? undefined}>{m.prompt_version ?? '—'}</td>
+                    <td>
+                      {m.model ? (
+                        <span className="model-cell">
+                          <span title={m.model}>{shortModelName(m.model)}</span>
+                          {m.prompt_version && (
+                            <span className="badge badge--version" title="Prompt version">
+                              {m.prompt_version}
+                            </span>
+                          )}
+                        </span>
+                      ) : '—'}
+                    </td>
                   </tr>
                 ))}
               </tbody>
