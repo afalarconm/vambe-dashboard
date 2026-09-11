@@ -7,15 +7,13 @@ import urllib.request
 
 from scripts.labeling.taxonomy import ALL
 
-SYSTEM_PROMPT = """Classify sales meeting transcripts into fixed categories. Reply JSON only:
-{"primary_job":"...","handoff_topology":"...","system_gravity":"...","trust_surface":"...","buying_trigger":"...","volume_band":"..."}
+_SHAPE = "{" + ",".join(f'"{k}":"..."' for k in ALL) + "}"
+_VALUES = "\n".join(f"{k}: {'|'.join(v)}" for k, v in ALL.items())
+
+SYSTEM_PROMPT = f"""Classify sales meeting transcripts into fixed categories. Reply JSON only:
+{_SHAPE}
 Valid values:
-primary_job: scheduling_booking|catalog_guided_selling|quoting_pricing|order_taking|claims_intake|shipment_tracking|lead_qualification|faq_education
-handoff_topology: bot_only_implied|generic_human_handoff|book_specialist|role_based_routing
-system_gravity: standalone_ok|named_system_desired|must_integrate
-trust_surface: standard|health_sensitive|regulated_advice_boundary|discretion_prestige
-buying_trigger: ops_saturation|coverage_gap|growth_ambition|budget_cautious|efficiency_general
-volume_band: lt_100_mo|100_499_mo|500_1999_mo|2000_plus_mo|unspecified"""
+{_VALUES}"""
 
 
 def validate(cats: dict) -> bool:
