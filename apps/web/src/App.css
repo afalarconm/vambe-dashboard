@@ -371,19 +371,28 @@
   margin-bottom: 0.875rem;
 }
 
-/* ── Charts ── */
-.charts {
+/* ── Hero row: heatmap + gravity mix ── */
+.hero-row {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: 1fr;
   gap: 1rem;
   align-items: start;
   margin-bottom: 1rem;
 }
 
-@media (min-width: 1100px) {
-  .charts {
-    grid-template-columns: repeat(3, 1fr);
+@media (min-width: 900px) {
+  .hero-row {
+    grid-template-columns: 2fr 1fr;
   }
+}
+
+/* ── Charts ── */
+.charts {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1rem;
+  align-items: stretch;
+  margin-bottom: 1rem;
 }
 
 .chart {

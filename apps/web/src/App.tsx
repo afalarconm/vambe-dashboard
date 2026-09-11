@@ -77,13 +77,22 @@ type Metrics = {
   summary: { labeled: number; wins: number; win_rate: number }
 }
 
+const MIN_SAMPLE = 5
+const CHART_HEIGHT = 240
+const MIX_CHART_HEIGHT = 160
+
+// Win-rate small multiples — same shape, same fixed height, laid out as a 2x2 grid.
 const BAR_CHARTS = [
   { title: 'Tasa de conversión por trabajo principal', dataKey: 'by_job' as const, xKey: 'job' as const, dimensionKey: 'primary_job', color: CHART_COLORS.job, icon: 'chart__icon--blue', glyph: 'bars' as const },
   { title: 'Tasa de conversión por topología de transferencia', dataKey: 'by_handoff' as const, xKey: 'handoff' as const, dimensionKey: 'handoff_topology', color: CHART_COLORS.handoff, icon: 'chart__icon--sky', glyph: 'handoff' as const },
   { title: 'Tasa de conversión por motivo de compra', dataKey: 'by_trigger' as const, xKey: 'trigger' as const, dimensionKey: 'buying_trigger', color: CHART_COLORS.trigger, icon: 'chart__icon--orange', glyph: 'trigger' as const },
-  { title: 'Mezcla de gravedad del sistema', dataKey: 'gravity_mix' as const, xKey: 'gravity' as const, dimensionKey: 'system_gravity', color: CHART_COLORS.gravity, icon: 'chart__icon--purple', glyph: 'gravity' as const },
   { title: 'Tasa de conversión por banda de volumen', dataKey: 'by_volume_band' as const, xKey: 'volume_band' as const, dimensionKey: 'volume_band', color: CHART_COLORS.volume, icon: 'chart__icon--teal', glyph: 'volume' as const },
 ] as const
+
+// Composition, not a rate — kept out of the win-rate grid so it can't be misread as a fifth conversion chart.
+const MIX_CHART = {
+  title: 'Mezcla de gravedad del sistema', dataKey: 'gravity_mix' as const, xKey: 'gravity' as const, dimensionKey: 'system_gravity', color: CHART_COLORS.gravity, icon: 'chart__icon--purple', glyph: 'gravity' as const,
+} as const
 
 type Glyph = 'bars' | 'handoff' | 'trigger' | 'gravity' | 'volume' | 'grid'
 
@@ -181,7 +190,7 @@ const TOOLTIP_STYLE = {
   boxShadow: 'var(--shadow-md)',
 } as const
 
-function Chart({ title, data, xKey, dimensionKey, fill, iconClass, glyph, selected, onSelect }: {
+function Chart({ title, data, xKey, dimensionKey, fill, iconClass, glyph, selected, onSelect, height }: {
   title: string
   data: Record<string, unknown>[]
   xKey: string
@@ -191,10 +200,14 @@ function Chart({ title, data, xKey, dimensionKey, fill, iconClass, glyph, select
   glyph: Glyph
   selected: string
   onSelect: (value: string) => void
+  height: number
 }) {
   const isGravity = xKey === 'gravity'
   const valueKey = isGravity ? 'count' : 'win_rate'
-  const height = Math.max(128, data.length * 36 + 8)
+  const plotData: Record<string, unknown>[] = data.map((row) => ({
+    ...row,
+    _label: isGravity ? String(row[valueKey] ?? '') : `${row.win_rate ?? 0}% · n=${row.total ?? '?'}`,
+  }))
 
   return (
     <figure className="chart">
@@ -208,7 +221,7 @@ function Chart({ title, data, xKey, dimensionKey, fill, iconClass, glyph, select
         <p className="chart__empty">No hay filas etiquetadas en este filtro.</p>
       ) : (
         <ResponsiveContainer width="100%" height={height}>
-          <BarChart data={data} layout="vertical" margin={{ top: 4, right: 44, bottom: 4, left: 4 }}>
+          <BarChart data={plotData} layout="vertical" margin={{ top: 4, right: 68, bottom: 4, left: 4 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" horizontal={false} />
             <XAxis
               type="number"
@@ -225,7 +238,10 @@ function Chart({ title, data, xKey, dimensionKey, fill, iconClass, glyph, select
               tickLine={false}
             />
             <Tooltip
-              formatter={(v) => [isGravity ? v : `${v ?? 0}%`, isGravity ? 'Cantidad' : 'Tasa de conversión']}
+              formatter={(_v, _name, entry) => {
+                const row = entry?.payload as Record<string, unknown> | undefined
+                return [String(row?._label ?? ''), isGravity ? 'Cantidad' : 'Tasa de conversión']
+              }}
               labelFormatter={(v) => dimLabel(dimensionKey, v)}
               contentStyle={TOOLTIP_STYLE}
               labelStyle={{ fontWeight: 600, color: 'var(--color-text)' }}
@@ -241,15 +257,21 @@ function Chart({ title, data, xKey, dimensionKey, fill, iconClass, glyph, select
                 if (value) onSelect(value)
               }}
             >
-              {data.map((row) => {
+              {plotData.map((row) => {
                 const value = String(row[xKey] ?? '')
                 const dimmed = Boolean(selected) && selected !== value
-                return <Cell key={value} fill={fill} opacity={dimmed ? 0.35 : 1} />
+                const thin = !isGravity && Number(row.total ?? 0) < MIN_SAMPLE
+                return (
+                  <Cell
+                    key={value}
+                    fill={thin ? 'var(--color-text-subtle)' : fill}
+                    opacity={dimmed ? 0.35 : thin ? 0.55 : 1}
+                  />
+                )
               })}
               <LabelList
-                dataKey={valueKey}
+                dataKey="_label"
                 position="right"
-                formatter={(v) => (isGravity ? String(v ?? '') : `${v ?? 0}%`)}
                 style={{ fontSize: 11, fill: 'var(--color-text-muted)' }}
               />
             </Bar>
@@ -633,7 +655,7 @@ export default function App() {
           </div>
         </section>
       )}
-      <p className="chart-hint">Haz clic en una barra o celda del mapa de calor para filtrar. Vuelve a hacer clic para quitar el filtro.</p>
+      <p className="chart-hint">Haz clic en una barra o celda del mapa de calor para filtrar. Vuelve a hacer clic para quitar el filtro. Las barras con menos de {MIN_SAMPLE} reuniones se muestran atenuadas.</p>
       {chips.length > 0 && (
         <div className="chips" aria-label="Filtros de gráficos activos">
           {chips.map((chip) => (
@@ -644,6 +666,38 @@ export default function App() {
           ))}
         </div>
       )}
+
+      <section className="hero-row">
+        {metrics?.job_handoff_heatmap.handoffs.length ? (
+          <Heatmap
+            data={metrics.job_handoff_heatmap}
+            selectedJob={primaryJob}
+            selectedHandoff={handoff}
+            onSelect={(job, nextHandoff) => {
+              if (primaryJob === job && handoff === nextHandoff) {
+                setPrimaryJob('')
+                setHandoff('')
+              } else {
+                setPrimaryJob(job)
+                setHandoff(nextHandoff)
+              }
+            }}
+          />
+        ) : null}
+        <Chart
+          title={MIX_CHART.title}
+          data={(metrics?.[MIX_CHART.dataKey] ?? []) as Record<string, unknown>[]}
+          xKey={MIX_CHART.xKey}
+          dimensionKey={MIX_CHART.dimensionKey}
+          fill={MIX_CHART.color}
+          iconClass={MIX_CHART.icon}
+          glyph={MIX_CHART.glyph}
+          height={MIX_CHART_HEIGHT}
+          selected={chartSelected.gravity}
+          onSelect={(value) => selectChart('gravity', value)}
+        />
+      </section>
+
       <section className="charts">
         {BAR_CHARTS.map((c) => (
           <Chart
@@ -655,27 +709,12 @@ export default function App() {
             fill={c.color}
             iconClass={c.icon}
             glyph={c.glyph}
+            height={CHART_HEIGHT}
             selected={chartSelected[c.xKey]}
             onSelect={(value) => selectChart(c.xKey, value)}
           />
         ))}
       </section>
-      {metrics?.job_handoff_heatmap.handoffs.length ? (
-        <Heatmap
-          data={metrics.job_handoff_heatmap}
-          selectedJob={primaryJob}
-          selectedHandoff={handoff}
-          onSelect={(job, nextHandoff) => {
-            if (primaryJob === job && handoff === nextHandoff) {
-              setPrimaryJob('')
-              setHandoff('')
-            } else {
-              setPrimaryJob(job)
-              setHandoff(nextHandoff)
-            }
-          }}
-        />
-      ) : null}
 
       <section className="table-section">
         <div className="table-section__header">
