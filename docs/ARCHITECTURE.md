@@ -38,6 +38,7 @@ Al clonar el repo, `bake_db.py` corre una sola vez: los labels ya vienen version
 - **Python para el pipeline y la API.** El labeler ya es Python contra stdlib pura (`csv`, `sqlite3`, `urllib` — cero deps de HTTP). Servir con FastAPI deja un solo runtime que genera la DB y la sirve, en un solo deploy; las únicas deps de backend son `fastapi` y `uvicorn`.
 - **React + Vite para el dashboard.** Tabla, charts y heatmap comparten un set de filtros: eso es client state de verdad, no una página estática. Vite compila a estáticos que sirve el mismo FastAPI, así que no hay CORS ni un segundo deploy.
 - **SQLite, no Postgres.** El read model es de solo lectura, 10k filas, y se regenera en cada build. Un servicio de DB no compraría nada; el archivo viaja adentro del bundle de la función.
+- **El id de cada meeting sale del contenido, no de la fila.** `stable_id()` es un sha256 de `email|phone|fecha` (`bake_db.py:15`), así que re-ordenar el CSV o insertar filas no mueve los labels y volver a correr el build es idempotente — cero colisiones en las 10.000 filas. Por eso el labeler lee desde SQLite y no desde el CSV: necesita ese id para que la etiqueta apunte a algo estable.
 - **La DB se arma en build time, no se versiona.** `data/meetings.db` está en `.gitignore`; el CSV y `labels_llm_v1.json` son el artifact versionado. El costo: volver a correr el labeling exige un redeploy.
 - **Los charts usan los mismos filtros que la tabla.** `GET /metrics` toma los mismos query params que `GET /meetings`.
 

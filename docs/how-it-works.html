@@ -65,77 +65,98 @@
   <div class="frame">
     <p class="eyebrow">Architecture · Vambe Dashboard</p>
     <h1>Label, build, serve</h1>
-    <p class="caption">Labeling runs once, offline. The live app only reads a prebuilt SQLite file — no API key and no LLM call at request time.</p>
+    <p class="caption">The CSV is ingested first, so every meeting gets a stable id. The labeler samples <em>from</em> SQLite, and its output is committed as JSON and baked back in. The live app only reads the prebuilt database — no API key, no LLM call at request time.</p>
 
-    <svg viewBox="0 0 920 304" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="how-it-works-title how-it-works-desc">
+    <svg viewBox="0 0 920 360" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="how-it-works-title how-it-works-desc">
       <title id="how-it-works-title">Label, build, serve</title>
-      <desc id="how-it-works-desc">A CSV of 10,000 sales-meeting transcripts feeds an offline LLM labeling step and is combined, together with the resulting labels, into a SQLite database; the live dashboard only ever reads that prebuilt database.</desc>
+      <desc id="how-it-works-desc">A CSV of 10,000 Spanish discovery notes is ingested into SQLite, where each meeting gets a stable sha256 id. The offline labeler samples a subset of meetings out of that database, sends each note to an LLM, and writes the labels to a committed JSON file, which is baked back into the same database. The live dashboard only ever reads the prebuilt database.</desc>
       <defs>
         <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#475569"/></marker>
         <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#FF6900"/></marker>
-        <marker id="arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#437AEF"/></marker>
       </defs>
 
       <rect width="100%" height="100%" fill="#F8FAFC"/>
 
       <!-- Arrows (behind nodes) -->
-      <!-- CSV -> LLM: same x, straight vertical -->
-      <line x1="120" y1="112" x2="120" y2="192" stroke="#475569" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <!-- CSV -> SQLite: straight, same y -->
+      <line x1="210" y1="96" x2="332" y2="96" stroke="#475569" stroke-width="1.2" marker-end="url(#arrow)"/>
 
-      <!-- CSV -> SQLite: right+down elbow, enters upper attach point -->
-      <path d="M 200,76 H 252 Q 260,76 260,84 V 104 Q 260,112 268,112 H 320"
+      <!-- SQLite -> LLM: the labeler READS from the database -->
+      <path d="M 390,210 V 232 Q 390,240 382,240 H 313 Q 305,240 305,248 V 252"
             fill="none" stroke="#475569" stroke-width="1.2" marker-end="url(#arrow)"/>
 
-      <!-- LLM -> SQLite: right+up elbow, enters lower attach point -->
-      <path d="M 200,228 H 252 Q 260,228 260,220 V 200 Q 260,192 268,192 H 320"
+      <!-- LLM -> JSON -->
+      <line x1="380" y1="294" x2="452" y2="294" stroke="#475569" stroke-width="1.2" marker-end="url(#arrow)"/>
+
+      <!-- JSON -> SQLite: baked back in -->
+      <path d="M 550,258 V 236 Q 550,228 542,228 H 498 Q 490,228 490,220 V 216"
             fill="none" stroke="#475569" stroke-width="1.2" marker-end="url(#arrow)"/>
 
-      <!-- SQLite -> Dashboard: same y, straight horizontal, accent (focal-out) -->
-      <line x1="520" y1="152" x2="680" y2="152" stroke="#FF6900" stroke-width="1.4" marker-end="url(#arrow-accent)"/>
+      <!-- SQLite -> Dashboard: the only live path -->
+      <line x1="540" y1="125" x2="692" y2="125" stroke="#FF6900" stroke-width="1.4" marker-end="url(#arrow-accent)"/>
 
       <!-- Arrow labels (masked) -->
-      <rect x="230" y="84" width="42" height="12" rx="2" fill="#F8FAFC"/>
-      <text x="251" y="93" fill="#64748B" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">INGEST</text>
+      <rect x="254" y="88" width="42" height="12" rx="2" fill="#F8FAFC"/>
+      <text x="275" y="97" fill="#64748B" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">INGEST</text>
 
-      <rect x="228" y="204" width="46" height="12" rx="2" fill="#F8FAFC"/>
-      <text x="251" y="213" fill="#64748B" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">LABELS</text>
+      <rect x="366" y="220" width="48" height="12" rx="2" fill="#F8FAFC"/>
+      <text x="390" y="229" fill="#64748B" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">SAMPLE</text>
 
-      <rect x="562" y="140" width="76" height="12" rx="2" fill="#F8FAFC"/>
-      <text x="600" y="149" fill="#FF6900" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">READ-ONLY</text>
+      <rect x="394" y="288" width="44" height="12" rx="2" fill="#F8FAFC"/>
+      <text x="416" y="297" fill="#64748B" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">LABELS</text>
+
+      <rect x="532" y="230" width="36" height="12" rx="2" fill="#F8FAFC"/>
+      <text x="550" y="239" fill="#64748B" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">BAKE</text>
+
+      <rect x="578" y="117" width="76" height="12" rx="2" fill="#F8FAFC"/>
+      <text x="616" y="126" fill="#FF6900" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">READ-ONLY</text>
 
       <!-- CSV (input) -->
-      <rect x="40" y="40" width="160" height="72" rx="6" fill="#F8FAFC"/>
-      <rect x="40" y="40" width="160" height="72" rx="6" fill="rgba(71,85,105,0.10)" stroke="#64748B" stroke-width="1"/>
-      <rect x="48" y="48" width="28" height="12" rx="2" fill="transparent" stroke="rgba(100,116,139,0.40)" stroke-width="0.8"/>
-      <text x="62" y="57" fill="#64748B" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">CSV</text>
-      <text x="120" y="80" fill="#0F172A" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">10,000 transcripts</text>
-      <text x="120" y="96" fill="#475569" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">Spanish · sales meetings</text>
-
-      <!-- LLM (offline, optional/async style) -->
-      <rect x="40" y="192" width="160" height="72" rx="6" fill="#F8FAFC"/>
-      <rect x="40" y="192" width="160" height="72" rx="6" fill="rgba(15,23,42,0.02)" stroke="rgba(15,23,42,0.20)" stroke-width="1" stroke-dasharray="4,3"/>
-      <rect x="48" y="200" width="28" height="12" rx="2" fill="transparent" stroke="rgba(15,23,42,0.20)" stroke-width="0.8"/>
-      <text x="62" y="209" fill="#64748B" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">LLM</text>
-      <text x="120" y="232" fill="#0F172A" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Offline labeling</text>
-      <text x="120" y="248" fill="#475569" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">OpenRouter · Gemma</text>
+      <rect x="40" y="60" width="170" height="72" rx="6" fill="#F8FAFC"/>
+      <rect x="40" y="60" width="170" height="72" rx="6" fill="rgba(71,85,105,0.10)" stroke="#64748B" stroke-width="1"/>
+      <rect x="48" y="68" width="28" height="12" rx="2" fill="transparent" stroke="rgba(100,116,139,0.40)" stroke-width="0.8"/>
+      <text x="62" y="77" fill="#64748B" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">CSV</text>
+      <text x="125" y="101" fill="#0F172A" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">10,000 discovery notes</text>
+      <text x="125" y="117" fill="#475569" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">Spanish · sales meetings</text>
 
       <!-- SQLite (focal store) -->
-      <rect x="320" y="72" width="200" height="160" rx="6" fill="#F8FAFC"/>
-      <rect x="320" y="72" width="200" height="160" rx="6" fill="rgba(255,105,0,0.08)" stroke="#FF6900" stroke-width="1"/>
-      <rect x="332" y="88" width="24" height="12" rx="2" fill="transparent" stroke="rgba(255,105,0,0.50)" stroke-width="0.8"/>
-      <text x="344" y="97" fill="#FF6900" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">DB</text>
-      <text x="420" y="146" fill="#0F172A" font-size="13" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">SQLite</text>
-      <text x="420" y="162" fill="#475569" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">prebuilt database</text>
-      <text x="420" y="176" fill="#475569" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">meetings.db</text>
+      <rect x="340" y="40" width="200" height="170" rx="6" fill="#F8FAFC"/>
+      <rect x="340" y="40" width="200" height="170" rx="6" fill="rgba(255,105,0,0.08)" stroke="#FF6900" stroke-width="1"/>
+      <rect x="352" y="56" width="24" height="12" rx="2" fill="transparent" stroke="rgba(255,105,0,0.50)" stroke-width="0.8"/>
+      <text x="364" y="65" fill="#FF6900" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">DB</text>
+      <text x="440" y="112" fill="#0F172A" font-size="13" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">SQLite</text>
+      <text x="440" y="130" fill="#475569" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">prebuilt · meetings.db</text>
+      <line x1="364" y1="150" x2="516" y2="150" stroke="rgba(255,105,0,0.25)" stroke-width="1"/>
+      <text x="440" y="169" fill="#475569" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">id = sha256(email·phone·fecha)</text>
+      <text x="440" y="187" fill="#475569" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">10,000 rows · subset labeled</text>
 
       <!-- Dashboard (serve) -->
-      <rect x="680" y="108" width="200" height="88" rx="6" fill="#F8FAFC"/>
-      <rect x="680" y="108" width="200" height="88" rx="6" fill="#ffffff" stroke="#0F172A" stroke-width="1"/>
-      <rect x="692" y="124" width="28" height="12" rx="2" fill="transparent" stroke="rgba(15,23,42,0.40)" stroke-width="0.8"/>
-      <text x="706" y="133" fill="#0F172A" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">APP</text>
-      <text x="780" y="156" fill="#0F172A" font-size="13" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Dashboard</text>
-      <text x="780" y="172" fill="#475569" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">FastAPI + React</text>
-      <text x="780" y="186" fill="#475569" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">apps/api · apps/web</text>
+      <rect x="692" y="80" width="188" height="90" rx="6" fill="#F8FAFC"/>
+      <rect x="692" y="80" width="188" height="90" rx="6" fill="#ffffff" stroke="#0F172A" stroke-width="1"/>
+      <rect x="704" y="96" width="28" height="12" rx="2" fill="transparent" stroke="rgba(15,23,42,0.40)" stroke-width="0.8"/>
+      <text x="718" y="105" fill="#0F172A" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">APP</text>
+      <text x="786" y="131" fill="#0F172A" font-size="13" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Dashboard</text>
+      <text x="786" y="148" fill="#475569" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">FastAPI + React</text>
+      <text x="786" y="162" fill="#475569" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">apps/api · apps/web</text>
+
+      <!-- Offline loop label -->
+      <text x="431" y="348" fill="#94A3B8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">RUN ONCE, BY HAND · NEVER AT REQUEST TIME</text>
+
+      <!-- LLM (offline) -->
+      <rect x="230" y="258" width="150" height="72" rx="6" fill="#F8FAFC"/>
+      <rect x="230" y="258" width="150" height="72" rx="6" fill="rgba(15,23,42,0.02)" stroke="rgba(15,23,42,0.20)" stroke-width="1" stroke-dasharray="4,3"/>
+      <rect x="238" y="266" width="28" height="12" rx="2" fill="transparent" stroke="rgba(15,23,42,0.20)" stroke-width="0.8"/>
+      <text x="252" y="275" fill="#64748B" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">LLM</text>
+      <text x="305" y="300" fill="#0F172A" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Offline labeling</text>
+      <text x="305" y="316" fill="#475569" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">OpenRouter · Gemma</text>
+
+      <!-- Labels JSON (committed artifact) -->
+      <rect x="452" y="258" width="180" height="72" rx="6" fill="#F8FAFC"/>
+      <rect x="452" y="258" width="180" height="72" rx="6" fill="rgba(15,23,42,0.02)" stroke="rgba(15,23,42,0.20)" stroke-width="1" stroke-dasharray="4,3"/>
+      <rect x="460" y="266" width="32" height="12" rx="2" fill="transparent" stroke="rgba(15,23,42,0.20)" stroke-width="0.8"/>
+      <text x="476" y="275" fill="#64748B" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">JSON</text>
+      <text x="542" y="300" fill="#0F172A" font-size="11" font-weight="600" font-family="'Geist Mono', monospace" text-anchor="middle">labels_llm_v1.json</text>
+      <text x="542" y="316" fill="#475569" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">the versioned artifact</text>
     </svg>
   </div>
 </body>
