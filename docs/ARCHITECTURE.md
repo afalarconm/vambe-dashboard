@@ -8,7 +8,7 @@ El labeling corre una sola vez, offline. La app en vivo solo lee un SQLite ya ge
 
 | Step | Dónde | Qué hace |
 |---|---|---|
-| **Label** | `scripts/labeling/` | Sample de transcripts en SQLite → OpenRouter (Gemma) → `labels_llm_v1.json` |
+| **Label** | `scripts/labeling/` | Sample de transcripts en SQLite → OpenRouter (Gemma) → `labels_llm_v2.json` |
 | **Build** | `scripts/bake_db.py` | CSV + ese JSON → `data/meetings.db` |
 | **Serve** | `apps/api/` + `apps/web/` | API read-only + dashboard en React |
 
@@ -24,11 +24,12 @@ Al clonar el repo, `bake_db.py` corre una sola vez: los labels ya vienen version
 │   ├── api/             FastAPI: endpoints read-only sobre data/meetings.db, + tests
 │   └── web/             React + Vite: filtros, charts, tabla, drawer de transcripts
 ├── scripts/
-│   ├── bake_db.py       CSV + labels_llm_v1.json → data/meetings.db (y el SCHEMA que usan los tests)
-│   ├── test_pipeline.py stable_id y la validación de labels
+│   ├── bake_db.py       CSV + labels_llm_v2.json → data/meetings.db (y el SCHEMA que usan los tests)
+│   ├── test_pipeline.py stable_id, la validación y el bucketing de volumen
+│   ├── audit_volume_labels.py  mide los labels de volumen contra los transcripts
 │   ├── labeling/        labeling offline vía OpenRouter: taxonomía, prompt, cliente, export
 │   └── vercel_build.sh  build de deploy: compila apps/web y corre bake_db.py
-├── data/                CSV + labels_llm_v1.json (versionados); meetings.db se genera
+├── data/                CSV + labels_llm_v2.json (versionados); meetings.db se genera
 └── docs/                este doc + el diagrama
 ```
 
@@ -40,7 +41,7 @@ Al clonar el repo, `bake_db.py` corre una sola vez: los labels ya vienen version
 - **React + Vite para el dashboard.** Tabla, charts y heatmap comparten un set de filtros: eso es client state de verdad, no una página estática. Vite compila a estáticos que sirve el mismo FastAPI, así que no hay CORS ni un segundo deploy.
 - **SQLite, no Postgres.** El read model es de solo lectura, 10k filas, y se regenera en cada build. Un servicio de DB no compraría nada; el archivo viaja adentro del bundle de la función.
 - **El id de cada meeting sale del contenido, no de la fila.** `stable_id()` es un sha256 de `email|phone|fecha` (`bake_db.py:15`), así que re-ordenar el CSV o insertar filas no mueve los labels y volver a correr el build es idempotente — cero colisiones en las 10.000 filas. Por eso el labeler lee desde SQLite y no desde el CSV: necesita ese id para que la etiqueta apunte a algo estable.
-- **La DB se arma en build time, no se versiona.** `data/meetings.db` está en `.gitignore`; el CSV y `labels_llm_v1.json` son el artifact versionado. El costo: volver a correr el labeling exige un redeploy.
+- **La DB se arma en build time, no se versiona.** `data/meetings.db` está en `.gitignore`; el CSV y `labels_llm_v2.json` son el artifact versionado. El costo: volver a correr el labeling exige un redeploy.
 - **Los charts usan los mismos filtros que la tabla.** `GET /metrics` toma los mismos query params que `GET /meetings`.
 
 ## Dimensiones — qué y por qué
@@ -54,41 +55,85 @@ Las filas del CSV son discovery notes cortas en español, no transcripts complet
 | `system_gravity` | Qué tan atado está el pedido a sistemas existentes (standalone-OK → debe integrarse) | Determina la carga de ingeniería de soluciones y el costo de implementación |
 | `trust_surface` | Sensibilidad del rubro (estándar, salud, regulado, discreción/prestigio) | Define el nivel de compliance y quién tiene que aprobar |
 | `buying_trigger` | Por qué están comprando ahora (saturación operativa, brecha de cobertura, crecimiento, cautela de presupuesto, eficiencia general) | Alimenta el coaching de vendedores y la lectura de calidad del pipeline |
-| `volume_band` | Volumen de WhatsApp declarado, normalizado | Señal comparable de capacidad/pricing entre leads |
+| `volume_band` | Volumen de WhatsApp declarado, normalizado a banda mensual | Señal comparable de capacidad/pricing entre leads. **Derivada, no pedida al modelo** — ver abajo |
 
 ## Labeling con LLM
 
-- **Modelo:** `google/gemma-3-27b-it` vía OpenRouter, temperature 0, con system prompt de enum fijo; si la respuesta de Gemma no valida, cae a `google/gemini-2.0-flash-001`. El transcript se trata como contenido no confiable — el prompt nunca sigue instrucciones metidas ahí.
-- **Sample estratificado — y corregido al mostrarlo.** `label_meetings.py` saca mitad de reuniones cerradas y mitad abiertas, para que ambos resultados queden representados en cada dimensión en vez de sesgarse hacia lo más común. El costo es que el subconjunto etiquetado sobre-representa deals perdidos: su tasa cruda es 47,2% cuando la población real cierra 68,9%. Muestrear más no lo arregla — la regla de selección sigue siendo 50/50, así que un sample más grande converge al número equivocado con más precisión. Lo que sí lo arregla es ponderar (ver abajo).
+- **Modelo:** `google/gemma-3-27b-it` vía OpenRouter, temperature 0, con system prompt de enum fijo generado desde la taxonomía; si la respuesta de Gemma no valida, cae a `google/gemini-2.0-flash-001`. El transcript se trata como contenido no confiable — el prompt nunca sigue instrucciones metidas ahí.
+- **Sample estratificado — y corregido al mostrarlo.** `label_meetings.py` saca mitad de reuniones cerradas y mitad abiertas, para que ambos resultados queden representados en cada dimensión en vez de sesgarse hacia lo más común. El costo es que el subconjunto etiquetado sobre-representa deals perdidos: su tasa cruda es 50,0% cuando la población real cierra 68,9%. Muestrear más no lo arregla — la regla de selección sigue siendo 50/50, así que un sample más grande converge al número equivocado con más precisión. Lo que sí lo arregla es ponderar (ver abajo).
 - **Se valida, no se confía.** Cada respuesta se chequea contra el set de enums fijo (`openrouter_client.validate`); un valor fuera de eso se rechaza. Los retries usan backoff exponencial en rate limits/timeouts (4 intentos) antes de caer al modelo secundario; un transcript que falla en ambos se descarta en vez de guardarse con un label adivinado.
 - **La cobertura es en vivo, no un número fijo.** `GET /health` muestra el `llm_labels` actual sobre `total_meetings` — revisa ese endpoint en vez de confiar en un número de este doc. El filtro "Cobertura" del dashboard muestra por default solo las filas labeled, y cada barra de win rate / celda del heatmap muestra su propio `n` (atenuado bajo un mínimo de 5) para que un rate con poco sample nunca se lea como uno confiable.
 
+## Calidad de labels: lo único medible, medido
+
+El enunciado pide que el modelo "identifique correctamente" las categorías. `validate()` sólo comprueba que un valor esté en el enum — es un chequeo de tipo, no de corrección. Para cinco de las seis dimensiones no hay ground truth sin etiquetar a mano.
+
+`volume_band` es la excepción: el transcript dice la cifra en texto plano, así que se puede extraer y comparar. `scripts/audit_volume_labels.py` hace exactamente eso.
+
+**La primera versión del prompt pedía la banda directamente. Resultado:**
+
+| La cifra venía en | n | El label coincidía con el transcript |
+|---|---|---|
+| "…al mes" (sin conversión) | 412 | 72,8% |
+| "…semanales" (×4,33) | 306 | 51,6% |
+| "…diarias" (×30) | 164 | **25,6%** |
+
+La precisión caía en proporción exacta a cuánta aritmética hacía falta. Gemma leía el número y se saltaba la conversión: *"300 consultas diarias"* (≈9.000/mes → `2000_plus_mo`) quedaba etiquetado `100_499_mo`, dos bandas abajo. El sesgo era direccional — 285 subestimaciones contra 83 sobreestimaciones — así que los leads de mayor volumen, los comercialmente interesantes, eran los peor clasificados.
+
+**El arreglo: separar lectura de aritmética.** El modelo ahora devuelve dos campos crudos y tiene prohibido convertir:
+
+```json
+{"volume_amount": 300, "volume_period": "daily"}
+```
+
+y `volume_band()` en `taxonomy.py` hace la multiplicación, donde ×30 es exacto y está testeado. El modelo hace lo que sabe hacer — leer texto — y el código hace lo que sabe hacer — multiplicar.
+
+**Resultado sobre las 3.000 filas etiquetadas:**
+
+| La cifra venía en | n | Antes | Ahora |
+|---|---|---|---|
+| "…al mes" | 1.306 | 72,8% | **99,2%** |
+| "…semanales" | 984 | 51,6% | **99,4%** |
+| "…diarias" | 475 | 25,6% | **100,0%** |
+| **Total** | **2.765** | **56,7%** | **99,4%** |
+
+El gradiente desapareció, que es exactamente lo que se espera si el problema era la aritmética. El efecto comercial: `2000_plus_mo` pasó de 65 filas a 713 — los leads de mayor volumen estaban casi todos mal clasificados hacia abajo.
+
+Como `volume_amount` y `volume_period` quedan guardados crudos, mover un límite de banda es volver a correr `bake_db.py`, no volver a etiquetar.
+
+Corré el audit contra la DB actual para ver el número de hoy en vez de confiar en esta tabla:
+
+```bash
+python scripts/audit_volume_labels.py
+```
+
+El regex del audit no es perfecto — un transcript con varias cifras puede engañarlo — así que la tasa absoluta es un piso. Lo que importa es el desglose por período: aísla cuánto dependía la respuesta de una cuenta que el modelo no debería estar haciendo.
+
 ## Ponderación: por qué las tasas no se muestran crudas
 
-La selección para labeling dependió **solo** de `closed`, y fue aleatoria uniforme dentro de cada resultado. Eso hace que la corrección sea un inverse-probability weighting de dos constantes (`sample_weights()` en `apps/api/main.py`): cada fila cerrada pesa `cerradas_totales / cerradas_etiquetadas` (×15,04), cada abierta `abiertas_totales / abiertas_etiquetadas` (×6,07).
+El labeler etiqueta mitad cerradas y mitad abiertas, pero la población real cierra 68,9%. La muestra sobre-representa deals perdidos, así que promediarla cruda daba **50,0%** — 18,9 puntos abajo.
 
-Como la selección fue uniforme dentro de cada estrato sin importar la categoría, esos dos pesos globales siguen siendo válidos dentro de cualquier subgrupo — por eso se calculan una vez y no por filtro.
+El arreglo es contar cada fila por lo que representa: etiquetamos 1.500 de 6.888 cerradas (×4,59) y 1.500 de 3.112 abiertas (×2,07). Como la selección dependió sólo de `closed`, esos dos pesos valen dentro de cualquier filtro y se calculan una sola vez — `sample_weights()`.
 
-| | Tasa reportada |
+| Tasa | |
 |---|---|
-| Muestra cruda | 47,2% |
+| Muestra cruda | 50,0% |
 | Ponderada | **68,9%** |
 | Real, sobre las 10.000 filas | 68,9% ✓ |
 
-El ranking entre categorías no cambia — estratificar por resultado multiplica los odds de todas por la misma constante — pero los niveles sí. Validado contra ground truth por vendedor, donde la respuesta verdadera se conoce sin LLM: lo ponderado cae dentro de ~2 puntos en los 5 vendedores; lo crudo se equivoca por ~20 en todos.
-
-`win_rate` es la estimación ponderada; `total` y `wins` siguen siendo conteos crudos de la muestra, porque son el `n` que decide el atenuado bajo `min_sample`. Una tasa ponderada nunca infla el `n` que la respalda.
+- **El orden entre categorías nunca estuvo mal, sólo los niveles.** Validado por vendedor, donde la respuesta se conoce sin LLM: ponderado cae dentro de ~1,5 puntos en los 5; crudo se equivoca por ~19 en todos.
+- **`win_rate` es ponderado; `total` y `wins` son crudos.** Son el `n` del atenuado bajo `min_sample`: ponderar nunca infla el `n` que respalda una tasa.
 
 ## Volver a correr el labeling (opcional)
 
 Necesita una DB ya generada (ver README) y `OPENROUTER_API_KEY`. El labeler lee los transcripts que ya están en SQLite; después corre el build de nuevo para recargar el JSON.
 
 ```bash
-python -m scripts.labeling.label_meetings --limit 100 --export
+python -m scripts.labeling.label_meetings --limit 3000 --workers 8 --export
 python scripts/bake_db.py
 ```
 
-`--export` escribe `data/labels_llm_v1.json`. Re-exporta desde la DB con `python -m scripts.labeling.export_labels`.
+`--export` escribe `data/labels_llm_v2.json`. Re-exporta desde la DB con `python -m scripts.labeling.export_labels`.
 
 ## API
 

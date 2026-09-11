@@ -41,9 +41,15 @@ cd apps/web && npm run dev
 python -m unittest apps.api.test_metrics scripts.test_pipeline
 ```
 
+Y para medir la calidad de los labels de volumen contra los transcripts:
+
+```bash
+python scripts/audit_volume_labels.py
+```
+
 ## Variables de entorno
 
-Solo las usa el labeler offline ([volver a correr el labeling](docs/ARCHITECTURE.md#volver-a-correr-el-labeling-opcional)); la app en vivo no lee ninguna.
+Solo las usa el labeler offline ([volver a correr el labeling](docs/ARCHITECTURE.md#volver-a-correr-el-labeling-opcional)); la app en vivo no lee ninguna. El labeler lee un `.env` en la raíz si existe.
 
 | Var | Default | Para qué |
 |---|---|---|

@@ -7,17 +7,49 @@ import urllib.request
 
 from scripts.labeling.taxonomy import ALL
 
-_SHAPE = "{" + ",".join(f'"{k}":"..."' for k in ALL) + "}"
+_SHAPE = "{" + ",".join(f'"{k}":"..."' for k in ALL) + ',"volume_amount":null}'
 _VALUES = "\n".join(f"{k}: {'|'.join(v)}" for k, v in ALL.items())
 
 SYSTEM_PROMPT = f"""Classify sales meeting transcripts into fixed categories. Reply JSON only:
 {_SHAPE}
 Valid values:
-{_VALUES}"""
+{_VALUES}
+
+volume_amount: the message/enquiry volume the lead states, as a plain integer, in
+the SAME unit they said it. Do not convert between days, weeks and months. Do not
+do any arithmetic. For a range, use the higher number. If they state no volume,
+use null and set volume_period to "unspecified".
+Examples: "300 consultas diarias" -> volume_amount 300, volume_period "daily".
+"entre 800 y 1500 al mes" -> volume_amount 1500, volume_period "monthly".
+"150 tickets semanales" -> volume_amount 150, volume_period "weekly".
+"400 consultas anuales" -> volume_amount 400, volume_period "yearly"."""
+
+MAX_VOLUME = 1_000_000
+
+
+def normalize(cats: dict) -> dict:
+    """Accept the shapes models reach for around a number: "300", 300.0, "".*"""
+    amount = cats.get("volume_amount")
+    if isinstance(amount, bool):
+        amount = None
+    elif isinstance(amount, str):
+        digits = re.sub(r"[^\d]", "", amount)
+        amount = int(digits) if digits else None
+    elif isinstance(amount, float):
+        amount = int(amount)
+    elif not isinstance(amount, int):
+        amount = None
+    cats["volume_amount"] = amount
+    return cats
 
 
 def validate(cats: dict) -> bool:
-    return all(cats.get(k) in v for k, v in ALL.items())
+    if not all(cats.get(k) in v for k, v in ALL.items()):
+        return False
+    amount = cats.get("volume_amount")
+    if amount is None:
+        return True
+    return isinstance(amount, int) and 0 < amount <= MAX_VOLUME
 
 
 def llm_classify(transcript: str, model: str, fallback: str) -> dict | None:
@@ -50,10 +82,10 @@ def llm_classify(transcript: str, model: str, fallback: str) -> dict | None:
                 match = re.search(r"\{[^{}]+\}", content, re.S)
                 if not match:
                     continue
-                cats = json.loads(match.group())
+                cats = normalize(json.loads(match.group()))
                 if validate(cats):
                     return cats
-                break
+                continue
             except urllib.error.HTTPError as e:
                 if e.code in (429, 503) and attempt < 3:
                     time.sleep(min(2 ** attempt * 2, 30))
