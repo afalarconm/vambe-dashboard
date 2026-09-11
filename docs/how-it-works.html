@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Label, bake, serve · Architecture</title>
+  <title>Label, build, serve · Architecture</title>
   <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -64,12 +64,12 @@
 <body>
   <div class="frame">
     <p class="eyebrow">Architecture · Vambe Dashboard</p>
-    <h1>Label, bake, serve</h1>
-    <p class="caption">Labeling runs once, offline. The live app only reads a pre-baked SQLite file — no API key and no LLM call at request time.</p>
+    <h1>Label, build, serve</h1>
+    <p class="caption">Labeling runs once, offline. The live app only reads a prebuilt SQLite file — no API key and no LLM call at request time.</p>
 
     <svg viewBox="0 0 920 304" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="how-it-works-title how-it-works-desc">
-      <title id="how-it-works-title">Label, bake, serve</title>
-      <desc id="how-it-works-desc">A CSV of 10,000 sales-meeting transcripts feeds an offline LLM labeling step and is baked, together with the resulting labels, into a SQLite database; the live dashboard only ever reads that pre-baked database.</desc>
+      <title id="how-it-works-title">Label, build, serve</title>
+      <desc id="how-it-works-desc">A CSV of 10,000 sales-meeting transcripts feeds an offline LLM labeling step and is combined, together with the resulting labels, into a SQLite database; the live dashboard only ever reads that prebuilt database.</desc>
       <defs>
         <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#475569"/></marker>
         <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#FF6900"/></marker>
@@ -125,7 +125,7 @@
       <rect x="332" y="88" width="24" height="12" rx="2" fill="transparent" stroke="rgba(255,105,0,0.50)" stroke-width="0.8"/>
       <text x="344" y="97" fill="#FF6900" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">DB</text>
       <text x="420" y="146" fill="#0F172A" font-size="13" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">SQLite</text>
-      <text x="420" y="162" fill="#475569" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">baked database</text>
+      <text x="420" y="162" fill="#475569" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">prebuilt database</text>
       <text x="420" y="176" fill="#475569" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">meetings.db</text>
 
       <!-- Dashboard (serve) -->
