@@ -24,14 +24,15 @@ Al clonar el repo, `bake_db.py` corre una sola vez: los labels ya vienen version
 │   ├── api/             FastAPI: endpoints read-only sobre data/meetings.db, + tests
 │   └── web/             React + Vite: filtros, charts, tabla, drawer de transcripts
 ├── scripts/
-│   ├── bake_db.py       CSV + labels_llm_v1.json → data/meetings.db
+│   ├── bake_db.py       CSV + labels_llm_v1.json → data/meetings.db (y el SCHEMA que usan los tests)
+│   ├── test_pipeline.py stable_id y la validación de labels
 │   ├── labeling/        labeling offline vía OpenRouter: taxonomía, prompt, cliente, export
 │   └── vercel_build.sh  build de deploy: compila apps/web y corre bake_db.py
 ├── data/                CSV + labels_llm_v1.json (versionados); meetings.db se genera
 └── docs/                este doc + el diagrama
 ```
 
-`scripts/labeling/` es el único que le habla a un LLM y el único que necesita `OPENROUTER_API_KEY`; corre offline, a mano, nunca dentro de un request. `apps/api/` abre la DB read-only y no sabe qué es un LLM. `apps/web/` solo le habla a `apps/api/` — mismo origin en prod, proxy de Vite en dev. Si un componente no necesita un secret o un side effect, no lo tiene.
+`scripts/labeling/` es el único que le habla a un LLM y el único que necesita `OPENROUTER_API_KEY`; corre offline, a mano, nunca dentro de un request. `apps/api/` abre la DB read-only y no sabe qué es un LLM; los tests siembran desde el mismo `SCHEMA` que usa `bake_db.py`, así que el fixture no puede quedar desincronizado del read model. `apps/web/` solo le habla a `apps/api/` — mismo origin en prod, proxy de Vite en dev. Si un componente no necesita un secret o un side effect, no lo tiene.
 
 ## Decisiones
 
@@ -58,9 +59,25 @@ Las filas del CSV son discovery notes cortas en español, no transcripts complet
 ## Labeling con LLM
 
 - **Modelo:** `google/gemma-3-27b-it` vía OpenRouter, temperature 0, con system prompt de enum fijo; si la respuesta de Gemma no valida, cae a `google/gemini-2.0-flash-001`. El transcript se trata como contenido no confiable — el prompt nunca sigue instrucciones metidas ahí.
-- **Sample estratificado.** `label_meetings.py` saca mitad de reuniones cerradas y mitad abiertas, para que ambos resultados queden representados en cada dimensión en vez de sesgarse hacia lo más común.
+- **Sample estratificado — y corregido al mostrarlo.** `label_meetings.py` saca mitad de reuniones cerradas y mitad abiertas, para que ambos resultados queden representados en cada dimensión en vez de sesgarse hacia lo más común. El costo es que el subconjunto etiquetado sobre-representa deals perdidos: su tasa cruda es 47,2% cuando la población real cierra 68,9%. Muestrear más no lo arregla — la regla de selección sigue siendo 50/50, así que un sample más grande converge al número equivocado con más precisión. Lo que sí lo arregla es ponderar (ver abajo).
 - **Se valida, no se confía.** Cada respuesta se chequea contra el set de enums fijo (`openrouter_client.validate`); un valor fuera de eso se rechaza. Los retries usan backoff exponencial en rate limits/timeouts (4 intentos) antes de caer al modelo secundario; un transcript que falla en ambos se descarta en vez de guardarse con un label adivinado.
 - **La cobertura es en vivo, no un número fijo.** `GET /health` muestra el `llm_labels` actual sobre `total_meetings` — revisa ese endpoint en vez de confiar en un número de este doc. El filtro "Cobertura" del dashboard muestra por default solo las filas labeled, y cada barra de win rate / celda del heatmap muestra su propio `n` (atenuado bajo un mínimo de 5) para que un rate con poco sample nunca se lea como uno confiable.
+
+## Ponderación: por qué las tasas no se muestran crudas
+
+La selección para labeling dependió **solo** de `closed`, y fue aleatoria uniforme dentro de cada resultado. Eso hace que la corrección sea un inverse-probability weighting de dos constantes (`sample_weights()` en `apps/api/main.py`): cada fila cerrada pesa `cerradas_totales / cerradas_etiquetadas` (×15,04), cada abierta `abiertas_totales / abiertas_etiquetadas` (×6,07).
+
+Como la selección fue uniforme dentro de cada estrato sin importar la categoría, esos dos pesos globales siguen siendo válidos dentro de cualquier subgrupo — por eso se calculan una vez y no por filtro.
+
+| | Tasa reportada |
+|---|---|
+| Muestra cruda | 47,2% |
+| Ponderada | **68,9%** |
+| Real, sobre las 10.000 filas | 68,9% ✓ |
+
+El ranking entre categorías no cambia — estratificar por resultado multiplica los odds de todas por la misma constante — pero los niveles sí. Validado contra ground truth por vendedor, donde la respuesta verdadera se conoce sin LLM: lo ponderado cae dentro de ~2 puntos en los 5 vendedores; lo crudo se equivoca por ~20 en todos.
+
+`win_rate` es la estimación ponderada; `total` y `wins` siguen siendo conteos crudos de la muestra, porque son el `n` que decide el atenuado bajo `min_sample`. Una tasa ponderada nunca infla el `n` que la respalda.
 
 ## Volver a correr el labeling (opcional)
 
@@ -78,6 +95,6 @@ python scripts/bake_db.py
 | Endpoint | Devuelve |
 |----------|---------|
 | `GET /health` | `{ok, llm_labels, total_meetings}` |
-| `GET /meetings` | Meetings paginados + labels (filtros: seller, closed, dimensiones, `q`, `labeled_only`) |
+| `GET /meetings` | Meetings paginados + labels (filtros: seller, closed, dimensiones, `q`, `labeled_only`; `limit` ≤ 200, `offset` ≥ 0) |
 | `GET /filters` | Valores distintos para los filtros |
-| `GET /metrics` | Series de win rate, mezcla de gravity, heatmap job × handoff — mismos filtros que `/meetings` |
+| `GET /metrics` | Series de win rate (vendedor, job, handoff, trigger, volumen), mezcla de gravity, heatmap job × handoff — mismos filtros que `/meetings`. Todas las tasas vienen ponderadas |

@@ -1,6 +1,6 @@
 # Vambe Dashboard
 
-Explorador de sales meetings sobre 10k discovery notes en español: filtra meetings, compara win rates, revisa los labels de Gemma.
+Explorador de sales meetings sobre 10k discovery notes en español: filtra meetings, compara win rates, revisa los labels de Gemma. Los filtros viven en la URL, así que cualquier vista filtrada es un link que se comparte.
 
 **Live demo:** [vambe-dashboard-task.vercel.app](https://vambe-dashboard-task.vercel.app/) · [`/health`](https://vambe-dashboard-task.vercel.app/health)
 
@@ -38,7 +38,7 @@ cd apps/web && npm run dev
 ## Tests
 
 ```bash
-python -m unittest discover apps
+python -m unittest apps.api.test_metrics scripts.test_pipeline
 ```
 
 ## Variables de entorno

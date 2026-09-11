@@ -1,35 +1,69 @@
 import sqlite3
 from pathlib import Path
 
+from typing import Annotated
+
 from fastapi import FastAPI, Query
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 BUNDLE_DB = ROOT / "data" / "meetings.db"
-STATIC_DIR = Path(__file__).resolve().parent.parent / "web" / "dist"
+STATIC_DIR = ROOT / "apps" / "web" / "dist"
 
+# Win-rate charts. Seller lives on `meetings`, the labelled dimensions on `categories`,
+# so every group column is written qualified and checked against GROUP_COLS before use.
 WIN_RATE_SERIES = (
-    ("primary_job", "job"),
-    ("handoff_topology", "handoff"),
-    ("buying_trigger", "trigger"),
-    ("volume_band", "volume_band"),
+    ("m.seller", "seller"),
+    ("c.primary_job", "job"),
+    ("c.handoff_topology", "handoff"),
+    ("c.buying_trigger", "trigger"),
+    ("c.volume_band", "volume_band"),
 )
-GROUP_COLS = {col for col, _ in WIN_RATE_SERIES} | {"system_gravity"}
+GROUP_COLS = {col for col, _ in WIN_RATE_SERIES} | {"c.system_gravity"}
+
 
 app = FastAPI()
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 
 def db():
     conn = sqlite3.connect(f"file:{BUNDLE_DB}?mode=ro", uri=True)
     conn.row_factory = sqlite3.Row
     return conn
+
+
+def sample_weights(conn) -> tuple[float, float]:
+    """Inverse-probability weights, one per outcome, undoing the labeling sample.
+
+    `scripts/labeling/label_meetings.py` draws closed and open meetings in equal
+    numbers, so the labeled subset over-represents lost deals and every raw rate
+    computed on it is dragged toward 50%. Selection depended *only* on `closed`
+    and was uniform at random within each outcome, so scaling each row by
+    population/sample for its own outcome recovers population rates — and stays
+    valid inside any subgroup, which is why these are two global constants.
+    """
+    row = conn.execute("""
+        SELECT
+          (SELECT COUNT(*) FROM meetings WHERE closed = 1) AS pop_won,
+          (SELECT COUNT(*) FROM meetings WHERE closed = 0) AS pop_lost,
+          (SELECT COUNT(*) FROM meetings m JOIN categories c ON c.meeting_id = m.id
+            WHERE m.closed = 1) AS lab_won,
+          (SELECT COUNT(*) FROM meetings m JOIN categories c ON c.meeting_id = m.id
+            WHERE m.closed = 0) AS lab_lost
+    """).fetchone()
+    won = row["pop_won"] / row["lab_won"] if row["lab_won"] else 0.0
+    lost = row["pop_lost"] / row["lab_lost"] if row["lab_lost"] else 0.0
+    return won, lost
+
+
+def rate_sql(won: float, lost: float) -> str:
+    """Win rate with the labeling sample weighted back to the population.
+
+    Both weights come from sample_weights() as floats; nothing here is user input,
+    which is why they are formatted into the statement rather than bound.
+    """
+    return (
+        f"ROUND(100.0 * SUM(CASE WHEN m.closed = 1 THEN {float(won)} ELSE 0 END)"
+        f" / NULLIF(SUM(CASE WHEN m.closed = 1 THEN {float(won)} ELSE {float(lost)} END), 0), 1)"
+    )
 
 
 def meeting_clauses(
@@ -81,25 +115,26 @@ def where_sql(clauses: list[str]) -> str:
     return f"WHERE {' AND '.join(clauses)}" if clauses else ""
 
 
-def win_rate(conn, group_col: str, alias: str, clauses: list[str], params: list):
+def win_rate(conn, group_col: str, alias: str, clauses: list[str], params: list, weights):
     if group_col not in GROUP_COLS:
         raise ValueError(group_col)
-    where = where_sql([*clauses, f"c.{group_col} IS NOT NULL"])
+    where = where_sql([*clauses, f"{group_col} IS NOT NULL"])
     rows = conn.execute(f"""
-        SELECT c.{group_col} AS {alias},
+        SELECT {group_col} AS {alias},
                SUM(m.closed) AS wins,
                COUNT(*) AS total,
-               ROUND(100.0 * SUM(m.closed) / COUNT(*), 1) AS win_rate
+               {rate_sql(*weights)} AS win_rate
         FROM meetings m
         JOIN categories c ON c.meeting_id = m.id
         {where}
-        GROUP BY c.{group_col}
+        GROUP BY {group_col}
         ORDER BY win_rate DESC
     """, params).fetchall()
     return [dict(r) for r in rows]
 
 
 def gravity_mix(conn, clauses: list[str], params: list):
+    """Plain composition of the labeled sample — a count, not a rate, so unweighted."""
     where = where_sql([*clauses, "c.system_gravity IS NOT NULL"])
     rows = [dict(r) for r in conn.execute(f"""
         SELECT c.system_gravity AS gravity, COUNT(*) AS count
@@ -115,7 +150,7 @@ def gravity_mix(conn, clauses: list[str], params: list):
     return rows
 
 
-def job_handoff_heatmap(conn, clauses: list[str], params: list):
+def job_handoff_heatmap(conn, clauses: list[str], params: list, weights):
     where = where_sql([
         *clauses,
         "c.primary_job IS NOT NULL",
@@ -126,7 +161,7 @@ def job_handoff_heatmap(conn, clauses: list[str], params: list):
                c.handoff_topology AS handoff,
                SUM(m.closed) AS wins,
                COUNT(*) AS total,
-               ROUND(100.0 * SUM(m.closed) / COUNT(*), 1) AS win_rate
+               {rate_sql(*weights)} AS win_rate
         FROM meetings m
         JOIN categories c ON c.meeting_id = m.id
         {where}
@@ -137,33 +172,34 @@ def job_handoff_heatmap(conn, clauses: list[str], params: list):
     return {"jobs": jobs, "handoffs": handoffs, "cells": cells, "min_sample": 5}
 
 
-def labeled_summary(conn, clauses: list[str], params: list):
+def labeled_summary(conn, clauses: list[str], params: list, weights):
     where = where_sql(clauses)
     row = conn.execute(f"""
-        SELECT COUNT(*) AS labeled, COALESCE(SUM(m.closed), 0) AS wins
+        SELECT COUNT(*) AS labeled,
+               COALESCE(SUM(m.closed), 0) AS wins,
+               {rate_sql(*weights)} AS win_rate
         FROM meetings m
         JOIN categories c ON c.meeting_id = m.id
         {where}
     """, params).fetchone()
-    labeled = row["labeled"]
-    wins = row["wins"]
     return {
-        "labeled": labeled,
-        "wins": wins,
-        "win_rate": round(100.0 * wins / labeled, 1) if labeled else 0,
+        "labeled": row["labeled"],
+        "wins": row["wins"],
+        "win_rate": row["win_rate"] or 0,
     }
 
 
 def collect_metrics(conn, clauses: list[str], params: list) -> dict:
+    weights = sample_weights(conn)
     series = {
-        f"by_{alias}": win_rate(conn, col, alias, clauses, params)
+        f"by_{alias}": win_rate(conn, col, alias, clauses, params, weights)
         for col, alias in WIN_RATE_SERIES
     }
     return {
         **series,
         "gravity_mix": gravity_mix(conn, clauses, params),
-        "job_handoff_heatmap": job_handoff_heatmap(conn, clauses, params),
-        "summary": labeled_summary(conn, clauses, params),
+        "job_handoff_heatmap": job_handoff_heatmap(conn, clauses, params, weights),
+        "summary": labeled_summary(conn, clauses, params, weights),
     }
 
 
@@ -190,8 +226,8 @@ def meetings(
     volume_band: str | None = None,
     q: str | None = None,
     labeled_only: bool = False,
-    limit: int = Query(50, le=200),
-    offset: int = 0,
+    limit: Annotated[int, Query(le=200)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
 ):
     clauses, params = meeting_clauses(
         seller=seller, closed=closed, primary_job=primary_job,
@@ -200,7 +236,8 @@ def meetings(
         volume_band=volume_band, q=q, labeled_only=labeled_only,
     )
     where = where_sql(clauses)
-    sql = f"""
+    conn = db()
+    rows = [dict(r) for r in conn.execute(f"""
         SELECT m.id, m.nombre, m.email, m.seller, m.meeting_date, m.closed, m.transcript,
                c.primary_job, c.handoff_topology, c.system_gravity, c.trust_surface,
                c.buying_trigger, c.volume_band, c.model, c.prompt_version
@@ -209,15 +246,13 @@ def meetings(
         {where}
         ORDER BY m.meeting_date DESC
         LIMIT ? OFFSET ?
-    """
-    conn = db()
-    rows = [dict(r) for r in conn.execute(sql, [*params, limit, offset]).fetchall()]
+    """, [*params, limit, offset]).fetchall()]
     count = conn.execute(
         f"SELECT COUNT(*) FROM meetings m LEFT JOIN categories c ON c.meeting_id = m.id {where}",
         params,
     ).fetchone()[0]
     conn.close()
-    return {"items": rows, "total": count}
+    return {"items": rows, "total": count, "limit": limit, "offset": offset}
 
 
 @app.get("/metrics")
@@ -248,6 +283,7 @@ def metrics(
 @app.get("/filters")
 def filters():
     conn = db()
+
     def distinct(col, table="meetings"):
         return [r[0] for r in conn.execute(
             f"SELECT DISTINCT {col} FROM {table} WHERE {col} IS NOT NULL ORDER BY 1"
@@ -267,7 +303,4 @@ def filters():
 
 
 if STATIC_DIR.exists():
-    if hasattr(app, "frontend"):
-        app.frontend("/", directory="apps/web/dist", fallback="index.html")
-    else:
-        app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
+    app.frontend("/", directory=STATIC_DIR, fallback="index.html")

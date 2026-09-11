@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useState, type ReactNode } from 'react'
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react'
 import {
   Bar, BarChart, CartesianGrid, Cell, LabelList, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts'
@@ -37,6 +37,7 @@ type Meeting = {
 }
 
 type WinRate = { wins: number; total: number; win_rate: number }
+type WinRateSeller = WinRate & { seller: string }
 type WinRateJob = WinRate & { job: string }
 type WinRateHandoff = WinRate & { handoff: string }
 type WinRateTrigger = WinRate & { trigger: string }
@@ -53,6 +54,15 @@ type JobHandoffHeatmap = {
 type Health = { ok: boolean; llm_labels: number; total_meetings: number }
 
 const API = import.meta.env.DEV ? '/api' : ''
+const PAGE_SIZE = 50
+
+// fetch() only rejects on network failure, so a 500 would otherwise resolve and
+// blow up later in .json(). Surface both as one rejection the caller can catch.
+async function getJSON<T>(path: string): Promise<T> {
+  const res = await fetch(`${API}${path}`)
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+  return (await res.json()) as T
+}
 
 const CHART_COLORS = {
   job: 'var(--color-chart-1)',
@@ -60,6 +70,7 @@ const CHART_COLORS = {
   trigger: 'var(--color-chart-3)',
   gravity: 'var(--color-chart-4)',
   volume: 'var(--color-chart-5)',
+  seller: 'var(--color-chart-6)',
 } as const
 
 function shortModelName(model: string): string {
@@ -68,6 +79,7 @@ function shortModelName(model: string): string {
 }
 
 type Metrics = {
+  by_seller: WinRateSeller[]
   by_job: WinRateJob[]
   by_handoff: WinRateHandoff[]
   by_trigger: WinRateTrigger[]
@@ -81,8 +93,10 @@ const MIN_SAMPLE = 5
 const CHART_HEIGHT = 240
 const MIX_CHART_HEIGHT = 160
 
-// Win-rate small multiples — same shape, same fixed height, laid out as a 2x2 grid.
+// Win-rate small multiples: seller leads full-width, the four label dimensions
+// sit below it as a 2x2 grid of identical shape and height.
 const BAR_CHARTS = [
+  { title: 'Tasa de conversión por vendedor', dataKey: 'by_seller' as const, xKey: 'seller' as const, dimensionKey: 'seller', color: CHART_COLORS.seller, icon: 'chart__icon--indigo', glyph: 'seller' as const },
   { title: 'Tasa de conversión por trabajo principal', dataKey: 'by_job' as const, xKey: 'job' as const, dimensionKey: 'primary_job', color: CHART_COLORS.job, icon: 'chart__icon--blue', glyph: 'bars' as const },
   { title: 'Tasa de conversión por topología de transferencia', dataKey: 'by_handoff' as const, xKey: 'handoff' as const, dimensionKey: 'handoff_topology', color: CHART_COLORS.handoff, icon: 'chart__icon--sky', glyph: 'handoff' as const },
   { title: 'Tasa de conversión por motivo de compra', dataKey: 'by_trigger' as const, xKey: 'trigger' as const, dimensionKey: 'buying_trigger', color: CHART_COLORS.trigger, icon: 'chart__icon--orange', glyph: 'trigger' as const },
@@ -94,7 +108,7 @@ const MIX_CHART = {
   title: 'Mezcla de gravedad del sistema', dataKey: 'gravity_mix' as const, xKey: 'gravity' as const, dimensionKey: 'system_gravity', color: CHART_COLORS.gravity, icon: 'chart__icon--purple', glyph: 'gravity' as const,
 } as const
 
-type Glyph = 'bars' | 'handoff' | 'trigger' | 'gravity' | 'volume' | 'grid'
+type Glyph = 'bars' | 'handoff' | 'trigger' | 'gravity' | 'volume' | 'grid' | 'seller'
 
 function ChartGlyph({ name }: { name: Glyph }) {
   return (
@@ -127,6 +141,13 @@ function ChartGlyph({ name }: { name: Glyph }) {
           <rect x="13" y="4" width="7" height="7" rx="1" />
           <rect x="4" y="13" width="7" height="7" rx="1" />
           <rect x="13" y="13" width="7" height="7" rx="1" />
+        </>
+      )}
+      {name === 'seller' && (
+        <>
+          <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+          <circle cx="9" cy="7" r="4" />
+          <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
         </>
       )}
       {name === 'grid' && (
@@ -325,7 +346,7 @@ function Heatmap({ data, selectedJob, selectedHandoff, onSelect }: {
                 const thin = !cell || cell.total < data.min_sample
                 const active = selectedJob === job && selectedHandoff === handoff
                 const label = cell
-                  ? `${dimLabel('primary_job', job)} × ${dimLabel('handoff_topology', handoff)}: ${cell.win_rate}% (${cell.wins}/${cell.total})`
+                  ? `${dimLabel('primary_job', job)} × ${dimLabel('handoff_topology', handoff)}: ${cell.win_rate}% · n=${cell.total}`
                   : `${dimLabel('primary_job', job)} × ${dimLabel('handoff_topology', handoff)}: sin datos`
                 return (
                   <button
@@ -426,6 +447,9 @@ function TranscriptDrawer({ meeting, onClose }: { meeting: Meeting; onClose: () 
   )
 }
 
+const INITIAL = new URLSearchParams(window.location.search)
+const initial = (key: string) => INITIAL.get(key) ?? ''
+
 export default function App() {
   const [filters, setFilters] = useState<Filters | null>(null)
   const [meetings, setMeetings] = useState<Meeting[]>([])
@@ -433,20 +457,29 @@ export default function App() {
   const [metrics, setMetrics] = useState<Metrics | null>(null)
   const [health, setHealth] = useState<Health | null>(null)
   const [loading, setLoading] = useState(true)
-  const [labeledOnly, setLabeledOnly] = useState(true)
-  const [seller, setSeller] = useState('')
-  const [closed, setClosed] = useState('')
-  const [primaryJob, setPrimaryJob] = useState('')
-  const [handoff, setHandoff] = useState('')
-  const [trust, setTrust] = useState('')
-  const [trigger, setTrigger] = useState('')
-  const [gravity, setGravity] = useState('')
-  const [volumeBand, setVolumeBand] = useState('')
-  const [q, setQ] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  // Every filter seeds from the URL, so a shared link opens on the same view.
+  const [labeledOnly, setLabeledOnly] = useState(INITIAL.get('labeled_only') !== 'false')
+  const [seller, setSeller] = useState(initial('seller'))
+  const [closed, setClosed] = useState(initial('closed'))
+  const [primaryJob, setPrimaryJob] = useState(initial('primary_job'))
+  const [handoff, setHandoff] = useState(initial('handoff_topology'))
+  const [trust, setTrust] = useState(initial('trust_surface'))
+  const [trigger, setTrigger] = useState(initial('buying_trigger'))
+  const [gravity, setGravity] = useState(initial('system_gravity'))
+  const [volumeBand, setVolumeBand] = useState(initial('volume_band'))
+  const [q, setQ] = useState(initial('q'))
+  const [qDraft, setQDraft] = useState(initial('q'))
   const [tab, setTab] = useState<Tab>('dashboard')
   const [selected, setSelected] = useState<Meeting | null>(null)
 
-  const params = useCallback(() => {
+  // The search box runs LIKE '%…%' across every transcript, so don't fire per keystroke.
+  useEffect(() => {
+    const timer = setTimeout(() => setQ(qDraft), 300)
+    return () => clearTimeout(timer)
+  }, [qDraft])
+
+  const query = useMemo(() => {
     const p = new URLSearchParams()
     if (seller) p.set('seller', seller)
     if (closed !== '') p.set('closed', closed)
@@ -457,36 +490,58 @@ export default function App() {
     if (gravity) p.set('system_gravity', gravity)
     if (volumeBand) p.set('volume_band', volumeBand)
     if (q) p.set('q', q)
-    if (labeledOnly) p.set('labeled_only', 'true')
-    return p
+    p.set('labeled_only', String(labeledOnly))
+    return p.toString()
   }, [seller, closed, primaryJob, handoff, trust, trigger, gravity, volumeBand, q, labeledOnly])
 
+  // Page position belongs to one filter set, so changing filters restarts at page 1
+  // without a reset effect firing a second request.
+  const [page, setPage] = useState({ query: '', offset: 0 })
+  const offset = page.query === query ? page.offset : 0
+  const goToOffset = (next: number) => setPage({ query, offset: Math.max(0, next) })
+
   useEffect(() => {
-    fetch(`${API}/health`).then((r) => r.json()).then(setHealth)
-    fetch(`${API}/filters`).then((r) => r.json()).then(setFilters)
+    // The API wants labeled_only stated outright; the address bar only needs non-defaults.
+    const shown = new URLSearchParams(query)
+    if (shown.get('labeled_only') === 'true') shown.delete('labeled_only')
+    const qs = shown.toString()
+    window.history.replaceState(null, '', qs ? `?${qs}` : window.location.pathname)
+  }, [query])
+
+  useEffect(() => {
+    let cancelled = false
+    Promise.all([getJSON<Health>('/health'), getJSON<Filters>('/filters')])
+      .then(([h, f]) => { if (!cancelled) { setHealth(h); setFilters(f) } })
+      .catch((e: unknown) => { if (!cancelled) setError(e instanceof Error ? e.message : String(e)) })
+    return () => { cancelled = true }
   }, [])
 
   useEffect(() => {
-    const p = params()
     let cancelled = false
     Promise.all([
-      fetch(`${API}/meetings?${p}`).then((r) => r.json()),
-      fetch(`${API}/metrics?${p}`).then((r) => r.json()),
-    ]).then(([meetingsRes, metricsRes]: [{ items: Meeting[]; total: number }, Metrics]) => {
+      getJSON<{ items: Meeting[]; total: number }>(`/meetings?${query}&limit=${PAGE_SIZE}&offset=${offset}`),
+      getJSON<Metrics>(`/metrics?${query}`),
+    ]).then(([meetingsRes, metricsRes]) => {
       if (cancelled) return
       setMeetings(meetingsRes.items)
       setTotal(meetingsRes.total)
       setMetrics(metricsRes)
+      setError(null)
+      setLoading(false)
+    }).catch((e: unknown) => {
+      if (cancelled) return
+      setError(e instanceof Error ? e.message : String(e))
       setLoading(false)
     })
     return () => { cancelled = true }
-  }, [params])
+  }, [query, offset])
 
   const filtersActive = !labeledOnly || Boolean(
     seller || closed !== '' || primaryJob || handoff || trust || trigger || gravity || volumeBand || q,
   )
 
   const chartSelected: Record<string, string> = {
+    seller,
     job: primaryJob,
     handoff,
     trigger,
@@ -496,7 +551,8 @@ export default function App() {
 
   const selectChart = (xKey: string, value: string) => {
     const toggle = (current: string, set: (v: string) => void) => set(current === value ? '' : value)
-    if (xKey === 'job') toggle(primaryJob, setPrimaryJob)
+    if (xKey === 'seller') toggle(seller, setSeller)
+    else if (xKey === 'job') toggle(primaryJob, setPrimaryJob)
     else if (xKey === 'handoff') toggle(handoff, setHandoff)
     else if (xKey === 'trigger') toggle(trigger, setTrigger)
     else if (xKey === 'gravity') toggle(gravity, setGravity)
@@ -518,6 +574,18 @@ export default function App() {
         <div className="loading">
           <span className="loading__spinner" aria-hidden />
           Cargando dashboard…
+        </div>
+      </div>
+    )
+  }
+
+  if (error && !metrics) {
+    return (
+      <div className="app">
+        <div className="error-panel" role="alert">
+          <h2>No se pudo cargar el dashboard</h2>
+          <p className="error-panel__detail">{error}</p>
+          <button type="button" className="error-panel__retry" onClick={() => window.location.reload()}>Reintentar</button>
         </div>
       </div>
     )
@@ -566,6 +634,12 @@ export default function App() {
       </nav>
 
       <main id="main">
+      {error && (
+        <div className="error-banner" role="alert">
+          <span>No se pudieron actualizar los datos: {error}</span>
+          <button type="button" onClick={() => window.location.reload()}>Reintentar</button>
+        </div>
+      )}
       {tab === 'dimensions' ? (
         <DimensionsPage />
       ) : (
@@ -632,8 +706,8 @@ export default function App() {
         <FilterField label="Buscar">
           <input
             placeholder="Nombre o transcripción…"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
+            value={qDraft}
+            onChange={(e) => setQDraft(e.target.value)}
           />
         </FilterField>
       </section>
@@ -641,21 +715,21 @@ export default function App() {
       <p className="section-heading">Métricas de rendimiento</p>
       {metrics?.summary && (
         <section className="kpis" aria-label="Totales filtrados">
-          <div className="kpi">
+          <div className="kpi" title="Estimación ponderada sobre la población: el sample etiquetado es 50/50 cerrado/abierto, así que su tasa cruda no es la del negocio.">
             <span className="kpi__value">{metrics.summary.win_rate}%</span>
-            <span className="kpi__label">Tasa de conversión</span>
+            <span className="kpi__label">Tasa de conversión (estimada)</span>
           </div>
-          <div className="kpi">
+          <div className="kpi" title="Reuniones etiquetadas que caen dentro de los filtros actuales.">
             <span className="kpi__value">{metrics.summary.labeled.toLocaleString()}</span>
-            <span className="kpi__label">Etiquetadas en vista</span>
+            <span className="kpi__label">Muestra etiquetada</span>
           </div>
-          <div className="kpi">
+          <div className="kpi" title="Cerradas ganadas dentro de la muestra etiquetada — conteo crudo, no ponderado.">
             <span className="kpi__value">{metrics.summary.wins.toLocaleString()}</span>
-            <span className="kpi__label">Cerradas ganadas</span>
+            <span className="kpi__label">Ganadas en la muestra</span>
           </div>
         </section>
       )}
-      <p className="chart-hint">Haz clic en una barra o celda del mapa de calor para filtrar. Vuelve a hacer clic para quitar el filtro. Las barras con menos de {MIN_SAMPLE} reuniones se muestran atenuadas.</p>
+      <p className="chart-hint">Las tasas están ponderadas para deshacer el muestreo 50/50 del labeling; <code>n</code> es el tamaño crudo de la muestra. Haz clic en una barra o celda del mapa de calor para filtrar. Vuelve a hacer clic para quitar el filtro. Las barras con menos de {MIN_SAMPLE} reuniones se muestran atenuadas.</p>
       {chips.length > 0 && (
         <div className="chips" aria-label="Filtros de gráficos activos">
           {chips.map((chip) => (
@@ -720,7 +794,7 @@ export default function App() {
         <div className="table-section__header">
           <h2 className="table-section__title">Reuniones</h2>
           <span className="table-section__count">
-            {meetings.length} mostradas{total > meetings.length ? ` · ${total.toLocaleString()} coinciden` : ''}
+            {total.toLocaleString()} coinciden
             {' · haz clic en una fila para ver la transcripción'}
           </span>
         </div>
@@ -784,6 +858,23 @@ export default function App() {
             </table>
           )}
         </div>
+        {total > PAGE_SIZE && (
+          <div className="pager">
+            <button type="button" disabled={offset === 0} onClick={() => goToOffset(offset - PAGE_SIZE)}>
+              Anterior
+            </button>
+            <span className="pager__status">
+              {(offset + 1).toLocaleString()}–{Math.min(offset + PAGE_SIZE, total).toLocaleString()} de {total.toLocaleString()}
+            </span>
+            <button
+              type="button"
+              disabled={offset + PAGE_SIZE >= total}
+              onClick={() => goToOffset(offset + PAGE_SIZE)}
+            >
+              Siguiente
+            </button>
+          </div>
+        )}
       </section>
       {selected && <TranscriptDrawer meeting={selected} onClose={() => setSelected(null)} />}
         </>

@@ -395,6 +395,11 @@
   margin-bottom: 1rem;
 }
 
+/* Seller leads the grid full-width; it is the first entry in BAR_CHARTS. */
+.charts > .chart:first-child {
+  grid-column: 1 / -1;
+}
+
 .chart {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
@@ -452,6 +457,11 @@
 .chart__icon--teal {
   background: var(--color-vambe-blue-50);
   color: var(--color-vambe-blue-600);
+}
+
+.chart__icon--indigo {
+  background: var(--color-vambe-blue-100);
+  color: var(--color-vambe-blue-700);
 }
 
 .chart__icon--green {
@@ -920,4 +930,99 @@ td:first-child {
   .loading__spinner {
     animation: none;
   }
+}
+
+/* --- Error states: a failed fetch must never leave the spinner up --- */
+.error-panel {
+  max-width: 32rem;
+  margin: 4rem auto;
+  padding: 2rem;
+  text-align: center;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+}
+
+.error-panel h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.125rem;
+  color: var(--color-text);
+}
+
+.error-panel__detail {
+  margin: 0 0 1.25rem;
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
+  word-break: break-word;
+}
+
+.error-panel__retry,
+.error-banner button {
+  padding: 0.5rem 1rem;
+  font: inherit;
+  font-weight: 600;
+  color: var(--color-primary-text);
+  background: var(--color-primary);
+  border: none;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+
+.error-panel__retry:hover,
+.error-banner button:hover {
+  background: var(--color-primary-hover);
+}
+
+.error-banner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+  padding: 0.75rem 1rem;
+  font-size: 0.875rem;
+  color: var(--color-danger);
+  background: var(--color-danger-soft);
+  border: 1px solid var(--color-danger);
+  border-radius: var(--radius-md);
+}
+
+/* --- Pagination --- */
+.pager {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0.875rem 1rem;
+  border-top: 1px solid var(--color-border);
+}
+
+.pager__status {
+  font-size: 0.8125rem;
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.pager button {
+  padding: 0.4rem 0.85rem;
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--color-text);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+
+.pager button:hover:not(:disabled) {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.pager button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
