@@ -12,14 +12,14 @@ El labeling corre una sola vez, offline. La app en vivo solo lee un SQLite ya ge
 | **Build** | `scripts/bake_db.py` | CSV + ese JSON → `data/meetings.db` |
 | **Serve** | `apps/api/` + `apps/web/` | API read-only + dashboard en React |
 
-Un clone corre `bake_db.py` una sola vez: los labels ya están commiteados y el script carga CSV y JSON en la misma pasada. Las dos pasadas son el loop de autoría — batear para que el labeler tenga qué leer, labelear, batear de nuevo.
+Al clonar el repo, `bake_db.py` corre una sola vez: los labels ya vienen versionados y el script carga el CSV y el JSON en la misma pasada. Las dos pasadas son el loop de autoría — generar la DB para que el labeler tenga qué leer, correr el labeling, y volver a generarla.
 
 ## Estructura del repo
 
 ```
 .
 ├── main.py              entry point de Vercel → apps.api.main:app
-├── vercel.json          config de deploy (bundlea data/meetings.db en la función)
+├── vercel.json          config de deploy (incluye data/meetings.db en la función)
 ├── apps/
 │   ├── api/             FastAPI: endpoints read-only sobre data/meetings.db, + tests
 │   └── web/             React + Vite: filtros, charts, tabla, drawer de transcripts
@@ -27,7 +27,7 @@ Un clone corre `bake_db.py` una sola vez: los labels ya están commiteados y el 
 │   ├── bake_db.py       CSV + labels_llm_v1.json → data/meetings.db
 │   ├── labeling/        labeling offline vía OpenRouter: taxonomía, prompt, cliente, export
 │   └── vercel_build.sh  build de deploy: compila apps/web y corre bake_db.py
-├── data/                CSV + labels_llm_v1.json (commiteados); meetings.db se genera
+├── data/                CSV + labels_llm_v1.json (versionados); meetings.db se genera
 └── docs/                este doc + el diagrama
 ```
 
@@ -35,10 +35,10 @@ Un clone corre `bake_db.py` una sola vez: los labels ya están commiteados y el 
 
 ## Decisiones
 
-- **Python para el pipeline y la API.** El labeler ya es Python contra stdlib pura (`csv`, `sqlite3`, `urllib` — cero deps de HTTP). Servir con FastAPI deja un solo runtime que batea la DB y la sirve, en un solo deploy; las únicas deps de backend son `fastapi` y `uvicorn`.
+- **Python para el pipeline y la API.** El labeler ya es Python contra stdlib pura (`csv`, `sqlite3`, `urllib` — cero deps de HTTP). Servir con FastAPI deja un solo runtime que genera la DB y la sirve, en un solo deploy; las únicas deps de backend son `fastapi` y `uvicorn`.
 - **React + Vite para el dashboard.** Tabla, charts y heatmap comparten un set de filtros: eso es client state de verdad, no una página estática. Vite compila a estáticos que sirve el mismo FastAPI, así que no hay CORS ni un segundo deploy.
 - **SQLite, no Postgres.** El read model es de solo lectura, 10k filas, y se regenera en cada build. Un servicio de DB no compraría nada; el archivo viaja adentro del bundle de la función.
-- **La DB se arma en build time, no se commitea.** `data/meetings.db` está en `.gitignore`; el CSV y `labels_llm_v1.json` son el artifact versionado. El costo: re-labelear exige un redeploy.
+- **La DB se arma en build time, no se versiona.** `data/meetings.db` está en `.gitignore`; el CSV y `labels_llm_v1.json` son el artifact versionado. El costo: volver a correr el labeling exige un redeploy.
 - **Los charts usan los mismos filtros que la tabla.** `GET /metrics` toma los mismos query params que `GET /meetings`.
 
 ## Dimensiones — qué y por qué
@@ -58,10 +58,10 @@ Las filas del CSV son discovery notes cortas en español, no transcripts complet
 
 - **Modelo:** `google/gemma-3-27b-it` vía OpenRouter, temperature 0, con system prompt de enum fijo; si la respuesta de Gemma no valida, cae a `google/gemini-2.0-flash-001`. El transcript se trata como contenido no confiable — el prompt nunca sigue instrucciones metidas ahí.
 - **Sample estratificado.** `label_meetings.py` saca mitad de reuniones cerradas y mitad abiertas, para que ambos resultados queden representados en cada dimensión en vez de sesgarse hacia lo más común.
-- **Se valida, no se confía.** Cada respuesta se chequea contra el set de enums fijo (`openrouter_client.validate`); un valor fuera de eso se rechaza. Los retries usan backoff exponencial en rate limits/timeouts (4 intentos) antes de caer al modelo secundario; un transcript que falla en ambos se skipea en vez de guardarse con un label adivinado.
+- **Se valida, no se confía.** Cada respuesta se chequea contra el set de enums fijo (`openrouter_client.validate`); un valor fuera de eso se rechaza. Los retries usan backoff exponencial en rate limits/timeouts (4 intentos) antes de caer al modelo secundario; un transcript que falla en ambos se descarta en vez de guardarse con un label adivinado.
 - **La cobertura es en vivo, no un número fijo.** `GET /health` muestra el `llm_labels` actual sobre `total_meetings` — revisa ese endpoint en vez de confiar en un número de este doc. El filtro "Cobertura" del dashboard muestra por default solo las filas labeled, y cada barra de win rate / celda del heatmap muestra su propio `n` (atenuado bajo un mínimo de 5) para que un rate con poco sample nunca se lea como uno confiable.
 
-## Re-labelear (opcional)
+## Volver a correr el labeling (opcional)
 
 Necesita una DB ya generada (ver README) y `OPENROUTER_API_KEY`. El labeler lee los transcripts que ya están en SQLite; después corre el build de nuevo para recargar el JSON.
 

@@ -8,7 +8,7 @@ Explorador de sales meetings sobre 10k discovery notes en español: filtra meeti
 
 ## Correr local
 
-Necesitas Python 3.12 y Node ≥20.19 (lo pide Vite 8). Ninguna variable de entorno: el CSV y los labels están commiteados.
+Necesitas Python 3.12 y Node ≥20.19 (lo pide Vite 8). Ninguna variable de entorno: el CSV y los labels están versionados en el repo.
 
 ```bash
 pip install -r requirements.txt
@@ -43,7 +43,7 @@ python -m unittest discover apps
 
 ## Variables de entorno
 
-Solo las usa el labeler offline ([re-labelear](docs/ARCHITECTURE.md#re-labelear-opcional)); la app en vivo no lee ninguna.
+Solo las usa el labeler offline ([volver a correr el labeling](docs/ARCHITECTURE.md#volver-a-correr-el-labeling-opcional)); la app en vivo no lee ninguna.
 
 | Var | Default | Para qué |
 |---|---|---|
