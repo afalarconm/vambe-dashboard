@@ -64,50 +64,26 @@ Las filas del CSV son discovery notes cortas en español, no transcripts complet
 - **Se valida, no se confía.** Cada respuesta se chequea contra el set de enums fijo (`openrouter_client.validate`); un valor fuera de eso se rechaza. Los retries usan backoff exponencial en rate limits/timeouts (4 intentos) antes de caer al modelo secundario; un transcript que falla en ambos se descarta en vez de guardarse con un label adivinado.
 - **La cobertura es en vivo, no un número fijo.** `GET /health` muestra el `llm_labels` actual sobre `total_meetings` — revisa ese endpoint en vez de confiar en un número de este doc. El filtro "Cobertura" del dashboard muestra por default solo las filas labeled, y cada barra de win rate / celda del heatmap muestra su propio `n` (atenuado bajo un mínimo de 5) para que un rate con poco sample nunca se lea como uno confiable.
 
-## Calidad de labels: lo único medible, medido
+## Calidad de labels
 
-El enunciado pide que el modelo "identifique correctamente" las categorías. `validate()` sólo comprueba que un valor esté en el enum — es un chequeo de tipo, no de corrección. Para cinco de las seis dimensiones no hay ground truth sin etiquetar a mano.
+`validate()` comprueba que un valor esté en el enum, no que sea el correcto. `volume_band` es la única dimensión verificable: el transcript dice la cifra, así que se puede comparar.
 
-`volume_band` es la excepción: el transcript dice la cifra en texto plano, así que se puede extraer y comparar. `scripts/audit_volume_labels.py` hace exactamente eso.
-
-**La primera versión del prompt pedía la banda directamente. Resultado:**
-
-| La cifra venía en | n | El label coincidía con el transcript |
-|---|---|---|
-| "…al mes" (sin conversión) | 412 | 72,8% |
-| "…semanales" (×4,33) | 306 | 51,6% |
-| "…diarias" (×30) | 164 | **25,6%** |
-
-La precisión caía en proporción exacta a cuánta aritmética hacía falta. Gemma leía el número y se saltaba la conversión: *"300 consultas diarias"* (≈9.000/mes → `2000_plus_mo`) quedaba etiquetado `100_499_mo`, dos bandas abajo. El sesgo era direccional — 285 subestimaciones contra 83 sobreestimaciones — así que los leads de mayor volumen, los comercialmente interesantes, eran los peor clasificados.
-
-**El arreglo: separar lectura de aritmética.** El modelo ahora devuelve dos campos crudos y tiene prohibido convertir:
-
-```json
-{"volume_amount": 300, "volume_period": "daily"}
-```
-
-y `volume_band()` en `taxonomy.py` hace la multiplicación, donde ×30 es exacto y está testeado. El modelo hace lo que sabe hacer — leer texto — y el código hace lo que sabe hacer — multiplicar.
-
-**Resultado sobre las 3.000 filas etiquetadas:**
+La primera versión del prompt pedía la banda directamente, y el modelo fallaba en proporción a la aritmética que hacía falta:
 
 | La cifra venía en | n | Antes | Ahora |
 |---|---|---|---|
 | "…al mes" | 1.306 | 72,8% | **99,2%** |
-| "…semanales" | 984 | 51,6% | **99,4%** |
-| "…diarias" | 475 | 25,6% | **100,0%** |
+| "…semanales" (×4,33) | 984 | 51,6% | **99,4%** |
+| "…diarias" (×30) | 475 | 25,6% | **100,0%** |
 | **Total** | **2.765** | **56,7%** | **99,4%** |
 
-El gradiente desapareció, que es exactamente lo que se espera si el problema era la aritmética. El efecto comercial: `2000_plus_mo` pasó de 65 filas a 713 — los leads de mayor volumen estaban casi todos mal clasificados hacia abajo.
+*"300 consultas diarias"* (≈9.000/mes) quedaba en `100_499_mo`, dos bandas abajo. Ahora el modelo devuelve `volume_amount` y `volume_period` crudos y `volume_band()` multiplica — por eso son dos campos y no uno. `2000_plus_mo` pasó de 65 filas a 713.
 
-Como `volume_amount` y `volume_period` quedan guardados crudos, mover un límite de banda es volver a correr `bake_db.py`, no volver a etiquetar.
-
-Corré el audit contra la DB actual para ver el número de hoy en vez de confiar en esta tabla:
+Como los campos crudos quedan guardados, mover un límite de banda es re-bakear, no volver a etiquetar.
 
 ```bash
 python scripts/audit_volume_labels.py
 ```
-
-El regex del audit no es perfecto — un transcript con varias cifras puede engañarlo — así que la tasa absoluta es un piso. Lo que importa es el desglose por período: aísla cuánto dependía la respuesta de una cuenta que el modelo no debería estar haciendo.
 
 ## Ponderación: por qué las tasas no se muestran crudas
 
