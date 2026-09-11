@@ -4,9 +4,9 @@ import './App.css'
 export default function DimensionsPage() {
   return (
     <div className="dimensions">
-      <p className="section-heading">Label dimensions</p>
+      <p className="section-heading">Dimensiones de etiquetado</p>
       <p className="dimensions__intro">
-        Each meeting is tagged along these axes. Values are assigned by the LLM labeler — this page explains what they mean.
+        Cada reunión se etiqueta según estos ejes. Los valores los asigna el modelo de etiquetado (LLM); esta página explica qué significan.
       </p>
       <div className="dimensions__grid">
         {DIMENSIONS.map((dim) => (

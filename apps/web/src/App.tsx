@@ -3,6 +3,7 @@ import {
   Bar, BarChart, CartesianGrid, Cell, LabelList, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts'
 import DimensionsPage from './DimensionsPage'
+import { DIMENSIONS } from './dimensions'
 import './App.css'
 
 type Tab = 'dashboard' | 'dimensions'
@@ -77,11 +78,11 @@ type Metrics = {
 }
 
 const BAR_CHARTS = [
-  { title: 'Win rate by primary job', dataKey: 'by_job' as const, xKey: 'job' as const, color: CHART_COLORS.job, icon: 'chart__icon--blue', glyph: 'bars' as const },
-  { title: 'Win rate by handoff topology', dataKey: 'by_handoff' as const, xKey: 'handoff' as const, color: CHART_COLORS.handoff, icon: 'chart__icon--sky', glyph: 'handoff' as const },
-  { title: 'Win rate by buying trigger', dataKey: 'by_trigger' as const, xKey: 'trigger' as const, color: CHART_COLORS.trigger, icon: 'chart__icon--orange', glyph: 'trigger' as const },
-  { title: 'System gravity mix', dataKey: 'gravity_mix' as const, xKey: 'gravity' as const, color: CHART_COLORS.gravity, icon: 'chart__icon--purple', glyph: 'gravity' as const },
-  { title: 'Win rate by volume band', dataKey: 'by_volume_band' as const, xKey: 'volume_band' as const, color: CHART_COLORS.volume, icon: 'chart__icon--teal', glyph: 'volume' as const },
+  { title: 'Tasa de conversión por trabajo principal', dataKey: 'by_job' as const, xKey: 'job' as const, dimensionKey: 'primary_job', color: CHART_COLORS.job, icon: 'chart__icon--blue', glyph: 'bars' as const },
+  { title: 'Tasa de conversión por topología de transferencia', dataKey: 'by_handoff' as const, xKey: 'handoff' as const, dimensionKey: 'handoff_topology', color: CHART_COLORS.handoff, icon: 'chart__icon--sky', glyph: 'handoff' as const },
+  { title: 'Tasa de conversión por motivo de compra', dataKey: 'by_trigger' as const, xKey: 'trigger' as const, dimensionKey: 'buying_trigger', color: CHART_COLORS.trigger, icon: 'chart__icon--orange', glyph: 'trigger' as const },
+  { title: 'Mezcla de gravedad del sistema', dataKey: 'gravity_mix' as const, xKey: 'gravity' as const, dimensionKey: 'system_gravity', color: CHART_COLORS.gravity, icon: 'chart__icon--purple', glyph: 'gravity' as const },
+  { title: 'Tasa de conversión por banda de volumen', dataKey: 'by_volume_band' as const, xKey: 'volume_band' as const, dimensionKey: 'volume_band', color: CHART_COLORS.volume, icon: 'chart__icon--teal', glyph: 'volume' as const },
 ] as const
 
 type Glyph = 'bars' | 'handoff' | 'trigger' | 'gravity' | 'volume' | 'grid'
@@ -133,6 +134,24 @@ function prettyLabel(value: unknown) {
   return String(value ?? '').replace(/_/g, ' ')
 }
 
+const LABEL_BY_KEY: Record<string, Record<string, string>> = Object.fromEntries(
+  DIMENSIONS.map((d) => [d.key, Object.fromEntries(d.enums.map((e) => [e.key, e.label]))]),
+)
+
+function dimLabel(dimensionKey: string, value: unknown): string {
+  const v = String(value ?? '')
+  return LABEL_BY_KEY[dimensionKey]?.[v] ?? prettyLabel(v)
+}
+
+const CHIP_DIM_KEY: Record<string, string> = {
+  job: 'primary_job',
+  handoff: 'handoff_topology',
+  trust: 'trust_surface',
+  trigger: 'buying_trigger',
+  gravity: 'system_gravity',
+  volume: 'volume_band',
+}
+
 function barValue(d: unknown, xKey: string): string {
   if (!d || typeof d !== 'object') return ''
   const rec = d as Record<string, unknown>
@@ -162,10 +181,11 @@ const TOOLTIP_STYLE = {
   boxShadow: 'var(--shadow-md)',
 } as const
 
-function Chart({ title, data, xKey, fill, iconClass, glyph, selected, onSelect }: {
+function Chart({ title, data, xKey, dimensionKey, fill, iconClass, glyph, selected, onSelect }: {
   title: string
   data: Record<string, unknown>[]
   xKey: string
+  dimensionKey: string
   fill: string
   iconClass: string
   glyph: Glyph
@@ -185,7 +205,7 @@ function Chart({ title, data, xKey, fill, iconClass, glyph, selected, onSelect }
         <h2>{title}</h2>
       </div>
       {data.length === 0 ? (
-        <p className="chart__empty">No labeled rows in this filter.</p>
+        <p className="chart__empty">No hay filas etiquetadas en este filtro.</p>
       ) : (
         <ResponsiveContainer width="100%" height={height}>
           <BarChart data={data} layout="vertical" margin={{ top: 4, right: 44, bottom: 4, left: 4 }}>
@@ -199,14 +219,14 @@ function Chart({ title, data, xKey, fill, iconClass, glyph, selected, onSelect }
               type="category"
               dataKey={xKey}
               width={148}
-              tickFormatter={prettyLabel}
+              tickFormatter={(v) => dimLabel(dimensionKey, v)}
               tick={{ fontSize: 11, fill: 'var(--color-text-muted)' }}
               axisLine={false}
               tickLine={false}
             />
             <Tooltip
-              formatter={(v) => [isGravity ? v : `${v ?? 0}%`, isGravity ? 'Count' : 'Win rate']}
-              labelFormatter={prettyLabel}
+              formatter={(v) => [isGravity ? v : `${v ?? 0}%`, isGravity ? 'Cantidad' : 'Tasa de conversión']}
+              labelFormatter={(v) => dimLabel(dimensionKey, v)}
               contentStyle={TOOLTIP_STYLE}
               labelStyle={{ fontWeight: 600, color: 'var(--color-text)' }}
             />
@@ -264,7 +284,7 @@ function Heatmap({ data, selectedJob, selectedHandoff, onSelect }: {
         <span className="chart__icon chart__icon--green" aria-hidden>
           <ChartGlyph name="grid" />
         </span>
-        <h2>Win rate: job × handoff</h2>
+        <h2>Tasa de conversión: trabajo × transferencia</h2>
       </div>
       <div className="heatmap-wrap">
         <div
@@ -273,18 +293,18 @@ function Heatmap({ data, selectedJob, selectedHandoff, onSelect }: {
         >
           <div className="heatmap__corner" />
           {data.handoffs.map((h) => (
-            <div key={h} className="heatmap__col-label" title={prettyLabel(h)}>{prettyLabel(h)}</div>
+            <div key={h} className="heatmap__col-label" title={dimLabel('handoff_topology', h)}>{dimLabel('handoff_topology', h)}</div>
           ))}
           {data.jobs.map((job) => (
             <Fragment key={job}>
-              <div className="heatmap__row-label" title={prettyLabel(job)}>{prettyLabel(job)}</div>
+              <div className="heatmap__row-label" title={dimLabel('primary_job', job)}>{dimLabel('primary_job', job)}</div>
               {data.handoffs.map((handoff) => {
                 const cell = lookup.get(`${job}|${handoff}`)
                 const thin = !cell || cell.total < data.min_sample
                 const active = selectedJob === job && selectedHandoff === handoff
                 const label = cell
-                  ? `${prettyLabel(job)} × ${prettyLabel(handoff)}: ${cell.win_rate}% (${cell.wins}/${cell.total})`
-                  : `${prettyLabel(job)} × ${prettyLabel(handoff)}: no data`
+                  ? `${dimLabel('primary_job', job)} × ${dimLabel('handoff_topology', handoff)}: ${cell.win_rate}% (${cell.wins}/${cell.total})`
+                  : `${dimLabel('primary_job', job)} × ${dimLabel('handoff_topology', handoff)}: sin datos`
                 return (
                   <button
                     key={`${job}|${handoff}`}
@@ -313,7 +333,7 @@ function Heatmap({ data, selectedJob, selectedHandoff, onSelect }: {
         </div>
       </div>
       <div className="heatmap__legend">
-        <span>Click a cell to filter by job and handoff. Cells with n &lt; {data.min_sample} are greyed out.</span>
+        <span>Haz clic en una celda para filtrar por trabajo y transferencia. Las celdas con n &lt; {data.min_sample} aparecen en gris.</span>
         <span className="heatmap__scale" aria-hidden>
           <span>0%</span>
           <span className="heatmap__scale-bar" />
@@ -337,13 +357,13 @@ function TranscriptDrawer({ meeting, onClose }: { meeting: Meeting; onClose: () 
   }, [onClose])
 
   const labels = [
-    meeting.primary_job && ['Job', meeting.primary_job],
-    meeting.handoff_topology && ['Handoff', meeting.handoff_topology],
-    meeting.system_gravity && ['Gravity', meeting.system_gravity],
-    meeting.trust_surface && ['Trust', meeting.trust_surface],
-    meeting.buying_trigger && ['Trigger', meeting.buying_trigger],
-    meeting.volume_band && ['Volume', meeting.volume_band],
-  ].filter(Boolean) as [string, string][]
+    meeting.primary_job && ['Trabajo', meeting.primary_job, 'primary_job'],
+    meeting.handoff_topology && ['Transferencia', meeting.handoff_topology, 'handoff_topology'],
+    meeting.system_gravity && ['Gravedad', meeting.system_gravity, 'system_gravity'],
+    meeting.trust_surface && ['Confianza', meeting.trust_surface, 'trust_surface'],
+    meeting.buying_trigger && ['Motivo', meeting.buying_trigger, 'buying_trigger'],
+    meeting.volume_band && ['Volumen', meeting.volume_band, 'volume_band'],
+  ].filter(Boolean) as [string, string, string][]
 
   return (
     <div className="drawer-scrim" onClick={onClose}>
@@ -358,10 +378,10 @@ function TranscriptDrawer({ meeting, onClose }: { meeting: Meeting; onClose: () 
           <div>
             <h2 id="transcript-title" className="drawer__title">{meeting.nombre}</h2>
             <p className="drawer__meta">
-              {meeting.seller} · {meeting.meeting_date} · {meeting.closed ? 'Won' : 'Open'}
+              {meeting.seller} · {meeting.meeting_date} · {meeting.closed ? 'Ganado' : 'Abierto'}
             </p>
           </div>
-          <button type="button" className="drawer__close" onClick={onClose} aria-label="Close transcript">
+          <button type="button" className="drawer__close" onClick={onClose} aria-label="Cerrar transcripción">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
               <path d="M6 6l12 12M18 6L6 18" />
             </svg>
@@ -369,16 +389,16 @@ function TranscriptDrawer({ meeting, onClose }: { meeting: Meeting; onClose: () 
         </header>
         {labels.length > 0 && (
           <dl className="drawer__labels">
-            {labels.map(([k, v]) => (
+            {labels.map(([k, v, dimensionKey]) => (
               <div key={k}>
                 <dt>{k}</dt>
-                <dd>{prettyLabel(v)}</dd>
+                <dd>{dimLabel(dimensionKey, v)}</dd>
               </div>
             ))}
           </dl>
         )}
-        <h3 className="drawer__section">Transcript</h3>
-        <p className="transcript">{meeting.transcript || 'No transcript for this meeting.'}</p>
+        <h3 className="drawer__section">Transcripción</h3>
+        <p className="transcript">{meeting.transcript || 'No hay transcripción para esta reunión.'}</p>
       </aside>
     </div>
   )
@@ -462,12 +482,12 @@ export default function App() {
   }
 
   const chips = [
-    primaryJob && { key: 'job', label: 'Job', value: primaryJob, clear: () => setPrimaryJob('') },
-    handoff && { key: 'handoff', label: 'Handoff', value: handoff, clear: () => setHandoff('') },
-    trust && { key: 'trust', label: 'Trust', value: trust, clear: () => setTrust('') },
-    trigger && { key: 'trigger', label: 'Trigger', value: trigger, clear: () => setTrigger('') },
-    gravity && { key: 'gravity', label: 'Gravity', value: gravity, clear: () => setGravity('') },
-    volumeBand && { key: 'volume', label: 'Volume', value: volumeBand, clear: () => setVolumeBand('') },
+    primaryJob && { key: 'job', label: 'Trabajo', value: primaryJob, clear: () => setPrimaryJob('') },
+    handoff && { key: 'handoff', label: 'Transferencia', value: handoff, clear: () => setHandoff('') },
+    trust && { key: 'trust', label: 'Confianza', value: trust, clear: () => setTrust('') },
+    trigger && { key: 'trigger', label: 'Motivo', value: trigger, clear: () => setTrigger('') },
+    gravity && { key: 'gravity', label: 'Gravedad', value: gravity, clear: () => setGravity('') },
+    volumeBand && { key: 'volume', label: 'Volumen', value: volumeBand, clear: () => setVolumeBand('') },
   ].filter(Boolean) as { key: string; label: string; value: string; clear: () => void }[]
 
   if (loading) {
@@ -475,7 +495,7 @@ export default function App() {
       <div className="app">
         <div className="loading">
           <span className="loading__spinner" aria-hidden />
-          Loading dashboard…
+          Cargando dashboard…
         </div>
       </div>
     )
@@ -483,28 +503,28 @@ export default function App() {
 
     return (
     <div className="app">
-      <a className="skip-link" href="#main">Skip to content</a>
+      <a className="skip-link" href="#main">Saltar al contenido</a>
       <header className="app-header">
         <div className="app-header__brand">
           <div className="app-header__logo" aria-hidden>V</div>
           <div>
             <h1 className="app-header__title">Vambe Dashboard</h1>
-            <p className="app-header__subtitle">Sales meeting insights &amp; win-rate analytics</p>
+            <p className="app-header__subtitle">Información de reuniones de ventas y análisis de tasa de conversión</p>
           </div>
         </div>
         <div className="app-header__stats">
           {health && (
             <span className="stat-pill">
-              {health.llm_labels.toLocaleString()} labeled · {health.total_meetings.toLocaleString()} total
+              {health.llm_labels.toLocaleString()} etiquetadas · {health.total_meetings.toLocaleString()} en total
             </span>
           )}
           {filtersActive && (
-            <span className="stat-pill stat-pill--neutral">{total.toLocaleString()} in view</span>
+            <span className="stat-pill stat-pill--neutral">{total.toLocaleString()} en vista</span>
           )}
         </div>
       </header>
 
-      <nav className="tabs" aria-label="Main navigation">
+      <nav className="tabs" aria-label="Navegación principal">
         <button
           type="button"
           className={`tabs__btn${tab === 'dashboard' ? ' tabs__btn--active' : ''}`}
@@ -519,7 +539,7 @@ export default function App() {
           aria-current={tab === 'dimensions' ? 'page' : undefined}
           onClick={() => setTab('dimensions')}
         >
-          Dimensions
+          Dimensiones
         </button>
       </nav>
 
@@ -528,97 +548,97 @@ export default function App() {
         <DimensionsPage />
       ) : (
         <>
-      <section className="filters" aria-label="Filters">
-        <FilterField label="Coverage">
+      <section className="filters" aria-label="Filtros">
+        <FilterField label="Cobertura">
           <select
             value={labeledOnly ? 'labeled' : 'all'}
             onChange={(e) => setLabeledOnly(e.target.value === 'labeled')}
           >
-            <option value="labeled">Labeled</option>
-            <option value="all">All meetings</option>
+            <option value="labeled">Etiquetados</option>
+            <option value="all">Todas las reuniones</option>
           </select>
         </FilterField>
-        <FilterField label="Seller">
+        <FilterField label="Vendedor">
           <select value={seller} onChange={(e) => setSeller(e.target.value)}>
-            <option value="">All</option>
+            <option value="">Todos</option>
             {filters?.sellers.map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
         </FilterField>
-        <FilterField label="Outcome">
+        <FilterField label="Resultado">
           <select value={closed} onChange={(e) => setClosed(e.target.value)}>
-            <option value="">All</option>
-            <option value="1">Closed won</option>
-            <option value="0">Open</option>
+            <option value="">Todos</option>
+            <option value="1">Cerrado ganado</option>
+            <option value="0">Abierto</option>
           </select>
         </FilterField>
-        <FilterField label="Primary job">
+        <FilterField label="Trabajo principal">
           <select value={primaryJob} onChange={(e) => setPrimaryJob(e.target.value)}>
-            <option value="">All</option>
-            {filters?.primary_jobs.map((j) => <option key={j} value={j}>{j.replace(/_/g, ' ')}</option>)}
+            <option value="">Todos</option>
+            {filters?.primary_jobs.map((j) => <option key={j} value={j}>{dimLabel('primary_job', j)}</option>)}
           </select>
         </FilterField>
-        <FilterField label="Handoff">
+        <FilterField label="Transferencia">
           <select value={handoff} onChange={(e) => setHandoff(e.target.value)}>
-            <option value="">All</option>
-            {filters?.handoff_topologies.map((h) => <option key={h} value={h}>{h.replace(/_/g, ' ')}</option>)}
+            <option value="">Todos</option>
+            {filters?.handoff_topologies.map((h) => <option key={h} value={h}>{dimLabel('handoff_topology', h)}</option>)}
           </select>
         </FilterField>
-        <FilterField label="Trust">
+        <FilterField label="Confianza">
           <select value={trust} onChange={(e) => setTrust(e.target.value)}>
-            <option value="">All</option>
-            {filters?.trust_surfaces.map((t) => <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>)}
+            <option value="">Todos</option>
+            {filters?.trust_surfaces.map((t) => <option key={t} value={t}>{dimLabel('trust_surface', t)}</option>)}
           </select>
         </FilterField>
-        <FilterField label="Trigger">
+        <FilterField label="Motivo">
           <select value={trigger} onChange={(e) => setTrigger(e.target.value)}>
-            <option value="">All</option>
-            {filters?.buying_triggers.map((t) => <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>)}
+            <option value="">Todos</option>
+            {filters?.buying_triggers.map((t) => <option key={t} value={t}>{dimLabel('buying_trigger', t)}</option>)}
           </select>
         </FilterField>
-        <FilterField label="Gravity">
+        <FilterField label="Gravedad">
           <select value={gravity} onChange={(e) => setGravity(e.target.value)}>
-            <option value="">All</option>
-            {filters?.system_gravities.map((g) => <option key={g} value={g}>{g.replace(/_/g, ' ')}</option>)}
+            <option value="">Todos</option>
+            {filters?.system_gravities.map((g) => <option key={g} value={g}>{dimLabel('system_gravity', g)}</option>)}
           </select>
         </FilterField>
-        <FilterField label="Volume">
+        <FilterField label="Volumen">
           <select value={volumeBand} onChange={(e) => setVolumeBand(e.target.value)}>
-            <option value="">All</option>
-            {filters?.volume_bands.map((v) => <option key={v} value={v}>{v.replace(/_/g, ' ')}</option>)}
+            <option value="">Todos</option>
+            {filters?.volume_bands.map((v) => <option key={v} value={v}>{dimLabel('volume_band', v)}</option>)}
           </select>
         </FilterField>
-        <FilterField label="Search">
+        <FilterField label="Buscar">
           <input
-            placeholder="Name or transcript…"
+            placeholder="Nombre o transcripción…"
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />
         </FilterField>
       </section>
 
-      <p className="section-heading">Performance metrics</p>
+      <p className="section-heading">Métricas de rendimiento</p>
       {metrics?.summary && (
-        <section className="kpis" aria-label="Filtered totals">
+        <section className="kpis" aria-label="Totales filtrados">
           <div className="kpi">
             <span className="kpi__value">{metrics.summary.win_rate}%</span>
-            <span className="kpi__label">Win rate</span>
+            <span className="kpi__label">Tasa de conversión</span>
           </div>
           <div className="kpi">
             <span className="kpi__value">{metrics.summary.labeled.toLocaleString()}</span>
-            <span className="kpi__label">Labeled in view</span>
+            <span className="kpi__label">Etiquetadas en vista</span>
           </div>
           <div className="kpi">
             <span className="kpi__value">{metrics.summary.wins.toLocaleString()}</span>
-            <span className="kpi__label">Closed won</span>
+            <span className="kpi__label">Cerradas ganadas</span>
           </div>
         </section>
       )}
-      <p className="chart-hint">Click a bar or heatmap cell to filter. Click again to clear.</p>
+      <p className="chart-hint">Haz clic en una barra o celda del mapa de calor para filtrar. Vuelve a hacer clic para quitar el filtro.</p>
       {chips.length > 0 && (
-        <div className="chips" aria-label="Active chart filters">
+        <div className="chips" aria-label="Filtros de gráficos activos">
           {chips.map((chip) => (
             <button key={chip.key} type="button" className="chip" onClick={chip.clear}>
-              {chip.label}: {prettyLabel(chip.value)}
+              {chip.label}: {dimLabel(CHIP_DIM_KEY[chip.key], chip.value)}
               <span aria-hidden>×</span>
             </button>
           ))}
@@ -631,6 +651,7 @@ export default function App() {
             title={c.title}
             data={(metrics?.[c.dataKey] ?? []) as Record<string, unknown>[]}
             xKey={c.xKey}
+            dimensionKey={c.dimensionKey}
             fill={c.color}
             iconClass={c.icon}
             glyph={c.glyph}
@@ -658,10 +679,10 @@ export default function App() {
 
       <section className="table-section">
         <div className="table-section__header">
-          <h2 className="table-section__title">Meetings</h2>
+          <h2 className="table-section__title">Reuniones</h2>
           <span className="table-section__count">
-            {meetings.length} shown{total > meetings.length ? ` · ${total.toLocaleString()} match` : ''}
-            {' · click a row for the transcript'}
+            {meetings.length} mostradas{total > meetings.length ? ` · ${total.toLocaleString()} coinciden` : ''}
+            {' · haz clic en una fila para ver la transcripción'}
           </span>
         </div>
         <div className="table-wrap">
@@ -670,19 +691,19 @@ export default function App() {
               <div className="empty-state__icon" aria-hidden>
                 <ChartGlyph name="bars" />
               </div>
-              <p>No meetings match your filters.</p>
+              <p>Ninguna reunión coincide con tus filtros.</p>
             </div>
           ) : (
             <table>
               <thead>
                 <tr>
-                  <th>Name</th>
-                  <th>Seller</th>
-                  <th>Date</th>
-                  <th>Closed</th>
-                  <th>Primary job</th>
-                  <th>Handoff</th>
-                  <th>Model</th>
+                  <th>Nombre</th>
+                  <th>Vendedor</th>
+                  <th>Fecha</th>
+                  <th>Cerrado</th>
+                  <th>Trabajo principal</th>
+                  <th>Transferencia</th>
+                  <th>Modelo</th>
                 </tr>
               </thead>
               <tbody>
@@ -701,17 +722,17 @@ export default function App() {
                     <td>{m.meeting_date}</td>
                     <td>
                       <span className={`badge ${m.closed ? 'badge--won' : 'badge--open'}`}>
-                        {m.closed ? 'Won' : 'Open'}
+                        {m.closed ? 'Ganado' : 'Abierto'}
                       </span>
                     </td>
-                    <td>{m.primary_job ? prettyLabel(m.primary_job) : '—'}</td>
-                    <td>{m.handoff_topology ? prettyLabel(m.handoff_topology) : '—'}</td>
+                    <td>{m.primary_job ? dimLabel('primary_job', m.primary_job) : '—'}</td>
+                    <td>{m.handoff_topology ? dimLabel('handoff_topology', m.handoff_topology) : '—'}</td>
                     <td>
                       {m.model ? (
                         <span className="model-cell">
                           <span title={m.model}>{shortModelName(m.model)}</span>
                           {m.prompt_version && (
-                            <span className="badge badge--version" title="Prompt version">
+                            <span className="badge badge--version" title="Versión del prompt">
                               {m.prompt_version}
                             </span>
                           )}
